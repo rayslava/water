@@ -7,6 +7,9 @@ version      = "0.1.0"
 [[bin]]
 name = "water"
 path = "./src/bin/main.rs"
+test = false
+doctest = false
+bench = false
 
 [dependencies]
 esp-bootloader-esp-idf = { version = "0.2.0", features = ["esp32"] }

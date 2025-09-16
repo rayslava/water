@@ -11,16 +11,15 @@
 use core::net::Ipv4Addr;
 
 use embassy_executor::Spawner;
-use embassy_net::{tcp::TcpSocket, Runner, StackResources};
+use embassy_net::{Runner, StackResources, tcp::TcpSocket};
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use esp_wifi::{
-    init,
+    EspWifiController, init,
     wifi::{ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState},
-    EspWifiController,
 };
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -51,10 +50,10 @@ async fn main(spawner: Spawner) -> ! {
 
     let esp_wifi_ctrl = &*mk_static!(
         EspWifiController<'static>,
-        init(timg0.timer0, rng.clone()).unwrap()
+        init(timg0.timer0, rng).unwrap()
     );
 
-    let (controller, interfaces) = esp_wifi::wifi::new(&esp_wifi_ctrl, peripherals.WIFI).unwrap();
+    let (controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI).unwrap();
 
     let wifi_interface = interfaces.sta;
 
@@ -142,13 +141,10 @@ async fn connection(mut controller: WifiController<'static>) {
     println!("start connection task");
     println!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        match esp_wifi::wifi::wifi_state() {
-            WifiState::StaConnected => {
-                // wait until we're no longer connected
-                controller.wait_for_event(WifiEvent::StaDisconnected).await;
-                Timer::after(Duration::from_millis(5000)).await
-            }
-            _ => {}
+        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
+            // wait until we're no longer connected
+            controller.wait_for_event(WifiEvent::StaDisconnected).await;
+            Timer::after(Duration::from_millis(5000)).await
         }
         if !matches!(controller.is_started(), Ok(true)) {
             let client_config = Configuration::Client(ClientConfiguration {

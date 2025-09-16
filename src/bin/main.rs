@@ -15,12 +15,15 @@ use embassy_net::{Runner, StackResources, tcp::TcpSocket};
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
+use esp_hal::i2c::master::I2c;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
+use esp_hal::{i2c::master::Config, time::Rate};
 use esp_println::println;
 use esp_wifi::{
     EspWifiController, init,
     wifi::{ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState},
 };
+use water::display;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -48,10 +51,21 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
 
-    let esp_wifi_ctrl = &*mk_static!(
-        EspWifiController<'static>,
-        init(timg0.timer0, rng).unwrap()
-    );
+    let config = Config::default().with_frequency(Rate::from_khz(100));
+    let i2c = peripherals.I2C0;
+    let sda = peripherals.GPIO21;
+    let scl = peripherals.GPIO22;
+    let i2c = I2c::new(i2c, config)
+        .unwrap()
+        .with_scl(scl)
+        .with_sda(sda)
+        .into_async();
+
+    println!("Init display for i2c: {:?}", i2c);
+
+    crate::display::init(i2c).await;
+
+    let esp_wifi_ctrl = &*mk_static!(EspWifiController<'static>, init(timg0.timer0, rng).unwrap());
 
     let (controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI).unwrap();
 

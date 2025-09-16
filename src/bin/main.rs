@@ -10,19 +10,30 @@
 
 use core::net::Ipv4Addr;
 
+use core::ptr::addr_of_mut;
+
 use embassy_executor::Spawner;
 use embassy_net::{Runner, StackResources, tcp::TcpSocket};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::i2c::master::I2c;
+use esp_hal::rtc_cntl::Rtc;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
+use esp_hal::{
+    gpio::{Level, Output, OutputConfig},
+    system::{Cpu, CpuControl, Stack},
+    timer::AnyTimer,
+};
 use esp_hal::{i2c::master::Config, time::Rate};
+use esp_hal_embassy::Executor;
 use esp_println::println;
 use esp_wifi::{
     EspWifiController, init,
     wifi::{ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState},
 };
+use static_cell::StaticCell;
 use water::display;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -39,6 +50,24 @@ macro_rules! mk_static {
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
+static mut APP_CORE_STACK: Stack<8192> = Stack::new();
+
+#[embassy_executor::task]
+async fn control_led(
+    mut led: Output<'static>,
+    control: &'static Signal<CriticalSectionRawMutex, bool>,
+) {
+    println!("Starting control_led() on core {}", Cpu::current() as usize);
+    loop {
+        if control.wait().await {
+            esp_println::println!("LED on");
+            led.set_low();
+        } else {
+            esp_println::println!("LED off");
+            led.set_high();
+        }
+    }
+}
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) -> ! {
@@ -73,6 +102,23 @@ async fn main(spawner: Spawner) -> ! {
 
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
+
+    let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+
+    static LED_CTRL: StaticCell<Signal<CriticalSectionRawMutex, bool>> = StaticCell::new();
+    let led_ctrl_signal = &*LED_CTRL.init(Signal::new());
+
+    let led = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
+
+    let _guard = cpu_control
+        .start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
+            static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+            let executor = EXECUTOR.init(Executor::new());
+            executor.run(|spawner| {
+                spawner.spawn(control_led(led, led_ctrl_signal)).ok();
+            });
+        })
+        .unwrap();
 
     let config = embassy_net::Config::dhcpv4(Default::default());
 
@@ -111,6 +157,7 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         Timer::after(Duration::from_millis(1_000)).await;
 
+        led_ctrl_signal.signal(true);
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
         socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
@@ -147,6 +194,7 @@ async fn main(spawner: Spawner) -> ! {
             println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
         }
         Timer::after(Duration::from_millis(3000)).await;
+        led_ctrl_signal.signal(false);
     }
 }
 

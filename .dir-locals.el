@@ -7,6 +7,8 @@
 	       (with-temp-buffer
 		 (call-process "bash" nil t nil "-c"
 			       "source ~/export-esp.sh; env | egrep '^PATH='")
+		 (insert "\nSSID=testssid\n")
+		 (insert "PASSWORD=testpassword\n")
 		 (goto-char (point-min))
 		 (while (not (eobp))
 		   (setq process-environment

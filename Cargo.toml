@@ -69,10 +69,12 @@ smoltcp = { version = "0.12", default-features = false, features = [
   "socket-udp",
 ] }
 static_cell = "2"
-
 ssd1306 = { version = "0.10", features = ["async", "graphics"] }
 embedded-graphics = "0.8"
 
+# Error handling dependencies
+thiserror-no-std = { version = "2", default-features = false }
+display-interface = "0"
 [profile.dev]
 opt-level = "s"
 

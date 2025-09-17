@@ -18,7 +18,6 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
-use esp_hal::i2c::master::I2c;
 use esp_hal::rtc_cntl::Rtc;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_hal::{
@@ -26,7 +25,6 @@ use esp_hal::{
     system::{Cpu, CpuControl, Stack},
     timer::AnyTimer,
 };
-use esp_hal::{i2c::master::Config, time::Rate};
 use esp_hal_embassy::Executor;
 use esp_println::println;
 use esp_wifi::{
@@ -34,7 +32,8 @@ use esp_wifi::{
     wifi::{ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState},
 };
 use static_cell::StaticCell;
-use water::display;
+use water::display::update_status;
+use water::{display, io::i2c::display_i2c_init};
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -48,8 +47,8 @@ macro_rules! mk_static {
     }};
 }
 
-const SSID: &str = env!("SSID");
-const PASSWORD: &str = env!("PASSWORD");
+const SSID: &str = "SSID";
+const PASSWORD: &str = "PASSWORD";
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
 
 #[embassy_executor::task]
@@ -80,19 +79,14 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
 
-    let config = Config::default().with_frequency(Rate::from_khz(100));
-    let i2c = peripherals.I2C0;
-    let sda = peripherals.GPIO21;
-    let scl = peripherals.GPIO22;
-    let i2c = I2c::new(i2c, config)
-        .unwrap()
-        .with_scl(scl)
-        .with_sda(sda)
-        .into_async();
-
-    println!("Init display for i2c: {:?}", i2c);
-
-    crate::display::init(i2c).await;
+    let mut display_i2c =
+        display_i2c_init(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22)
+            .await
+            .unwrap();
+    println!("Init display I2C");
+    let mut display = display::init(&mut display_i2c).await.unwrap();
+    println!("Init display");
+    update_status(&mut display).await.unwrap();
 
     let esp_wifi_ctrl = &*mk_static!(EspWifiController<'static>, init(timg0.timer0, rng).unwrap());
 

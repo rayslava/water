@@ -18,23 +18,21 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
-use esp_hal::rtc_cntl::Rtc;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_hal::{
-    gpio::{Level, Output, OutputConfig},
+    gpio::Output,
     system::{Cpu, CpuControl, Stack},
-    timer::AnyTimer,
 };
 use esp_hal_embassy::Executor;
 use esp_println::println;
-use esp_wifi::{
-    EspWifiController, init,
-    wifi::{ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState},
+use esp_wifi::wifi::{
+    ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
 };
 use static_cell::StaticCell;
 use water::display::update_status;
+use water::io::gpio::led_init;
+use water::io::wifi::wifi_hw_init;
 use water::{display, io::i2c::display_i2c_init};
-
 esp_bootloader_esp_idf::esp_app_desc!();
 
 // When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
@@ -71,6 +69,7 @@ async fn control_led(
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
+
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -85,31 +84,27 @@ async fn main(spawner: Spawner) -> ! {
             .unwrap();
     println!("Init display I2C");
     let mut display = display::init(&mut display_i2c).await.unwrap();
-    println!("Init display");
-    update_status(&mut display).await.unwrap();
+    update_status("WiFi init", &mut display).await.unwrap();
 
-    let esp_wifi_ctrl = &*mk_static!(EspWifiController<'static>, init(timg0.timer0, rng).unwrap());
-
-    let (controller, interfaces) = esp_wifi::wifi::new(esp_wifi_ctrl, peripherals.WIFI).unwrap();
-
-    let wifi_interface = interfaces.sta;
+    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI)
+        .await
+        .unwrap();
 
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
 
+    update_status("LED init", &mut display).await.unwrap();
+    let led = led_init(peripherals.GPIO2).await;
+
+    update_status("CPU 2 init", &mut display).await.unwrap();
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
-
-    static LED_CTRL: StaticCell<Signal<CriticalSectionRawMutex, bool>> = StaticCell::new();
-    let led_ctrl_signal = &*LED_CTRL.init(Signal::new());
-
-    let led = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
 
     let _guard = cpu_control
         .start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
             static EXECUTOR: StaticCell<Executor> = StaticCell::new();
             let executor = EXECUTOR.init(Executor::new());
             executor.run(|spawner| {
-                spawner.spawn(control_led(led, led_ctrl_signal)).ok();
+                spawner.spawn(control_led(led.led, led.control_signal)).ok();
             });
         })
         .unwrap();
@@ -120,13 +115,13 @@ async fn main(spawner: Spawner) -> ! {
 
     // Init network stack
     let (stack, runner) = embassy_net::new(
-        wifi_interface,
+        wifi.interface,
         config,
         mk_static!(StackResources<3>, StackResources::<3>::new()),
         seed,
     );
 
-    spawner.spawn(connection(controller)).ok();
+    spawner.spawn(connection(wifi.controller)).ok();
     spawner.spawn(net_task(runner)).ok();
 
     let mut rx_buffer = [0; 4096];
@@ -151,7 +146,7 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         Timer::after(Duration::from_millis(1_000)).await;
 
-        led_ctrl_signal.signal(true);
+        led.control_signal.signal(true);
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
         socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
@@ -188,7 +183,7 @@ async fn main(spawner: Spawner) -> ! {
             println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
         }
         Timer::after(Duration::from_millis(3000)).await;
-        led_ctrl_signal.signal(false);
+        led.control_signal.signal(false);
     }
 }
 

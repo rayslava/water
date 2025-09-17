@@ -1,7 +1,7 @@
 use crate::error::HwError;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::{
-    mono_font::{MonoTextStyleBuilder, ascii::FONT_6X10, ascii::FONT_6X13},
+    mono_font::{MonoTextStyleBuilder, ascii::FONT_6X10},
     pixelcolor::BinaryColor,
     prelude::*,
     text::Text,
@@ -32,7 +32,7 @@ pub async fn init<'a>(i2c: &'a mut I2c<'a, Async>) -> Result<Display<'a>, HwErro
     Ok(display)
 }
 
-pub async fn update_status(display: &mut Display<'_>) -> Result<(), HwError> {
+pub async fn update_status(status: &str, display: &mut Display<'_>) -> Result<(), HwError> {
     let text_style = MonoTextStyleBuilder::new()
         .font(&FONT_6X10)
         .text_color(BinaryColor::On)
@@ -40,7 +40,7 @@ pub async fn update_status(display: &mut Display<'_>) -> Result<(), HwError> {
 
     display.clear_buffer();
 
-    Text::with_baseline("Status", Point::new(10, 0), text_style, Baseline::Top).draw(display)?;
+    Text::with_baseline(status, Point::new(10, 0), text_style, Baseline::Top).draw(display)?;
 
     Ok(display.flush().await?)
 }

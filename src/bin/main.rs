@@ -13,58 +13,24 @@ use core::net::Ipv4Addr;
 use core::ptr::addr_of_mut;
 
 use embassy_executor::Spawner;
-use embassy_net::{Runner, StackResources, tcp::TcpSocket};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use embassy_net::tcp::TcpSocket;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
+use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
-use esp_hal::{
-    gpio::Output,
-    system::{Cpu, CpuControl, Stack},
-};
 use esp_hal_embassy::Executor;
 use esp_println::println;
-use esp_wifi::wifi::{
-    ClientConfiguration, Configuration, WifiController, WifiDevice, WifiEvent, WifiState,
-};
 use static_cell::StaticCell;
 use water::display::update_status;
 use water::io::gpio::led_init;
-use water::io::wifi::wifi_hw_init;
+use water::io::led::heartbeat;
+use water::io::wifi::{maintain_connection, wifi_hw_init};
+use water::net::stack::{init_net, net_task};
 use water::{display, io::i2c::display_i2c_init};
 esp_bootloader_esp_idf::esp_app_desc!();
 
-// When you are okay with using a nightly compiler it's better to use https://docs.rs/static_cell/2.1.0/static_cell/macro.make_static.html
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
-
-const SSID: &str = "SSID";
-const PASSWORD: &str = "PASSWORD";
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
-
-#[embassy_executor::task]
-async fn control_led(
-    mut led: Output<'static>,
-    control: &'static Signal<CriticalSectionRawMutex, bool>,
-) {
-    println!("Starting control_led() on core {}", Cpu::current() as usize);
-    loop {
-        if control.wait().await {
-            esp_println::println!("LED on");
-            led.set_low();
-        } else {
-            esp_println::println!("LED off");
-            led.set_high();
-        }
-    }
-}
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) -> ! {
@@ -104,24 +70,17 @@ async fn main(spawner: Spawner) -> ! {
             static EXECUTOR: StaticCell<Executor> = StaticCell::new();
             let executor = EXECUTOR.init(Executor::new());
             executor.run(|spawner| {
-                spawner.spawn(control_led(led.led, led.control_signal)).ok();
+                spawner.spawn(heartbeat(led.led, led.control_signal)).ok();
             });
         })
         .unwrap();
 
-    let config = embassy_net::Config::dhcpv4(Default::default());
-
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 
     // Init network stack
-    let (stack, runner) = embassy_net::new(
-        wifi.interface,
-        config,
-        mk_static!(StackResources<3>, StackResources::<3>::new()),
-        seed,
-    );
+    let (stack, runner) = init_net(wifi.interface, seed).await;
 
-    spawner.spawn(connection(wifi.controller)).ok();
+    spawner.spawn(maintain_connection(wifi.controller)).ok();
     spawner.spawn(net_task(runner)).ok();
 
     let mut rx_buffer = [0; 4096];
@@ -185,48 +144,4 @@ async fn main(spawner: Spawner) -> ! {
         Timer::after(Duration::from_millis(3000)).await;
         led.control_signal.signal(false);
     }
-}
-
-#[embassy_executor::task]
-async fn connection(mut controller: WifiController<'static>) {
-    println!("start connection task");
-    println!("Device capabilities: {:?}", controller.capabilities());
-    loop {
-        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
-            // wait until we're no longer connected
-            controller.wait_for_event(WifiEvent::StaDisconnected).await;
-            Timer::after(Duration::from_millis(5000)).await
-        }
-        if !matches!(controller.is_started(), Ok(true)) {
-            let client_config = Configuration::Client(ClientConfiguration {
-                ssid: SSID.into(),
-                password: PASSWORD.into(),
-                ..Default::default()
-            });
-            controller.set_configuration(&client_config).unwrap();
-            println!("Starting wifi");
-            controller.start_async().await.unwrap();
-            println!("Wifi started!");
-
-            println!("Scan");
-            let result = controller.scan_n_async(10).await.unwrap();
-            for ap in result {
-                println!("{:?}", ap);
-            }
-        }
-        println!("About to connect...");
-
-        match controller.connect_async().await {
-            Ok(_) => println!("Wifi connected!"),
-            Err(e) => {
-                println!("Failed to connect to wifi: {e:?}");
-                Timer::after(Duration::from_millis(5000)).await
-            }
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
-    runner.run().await
 }

@@ -1,7 +1,7 @@
 use crate::error::HwError;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::{
-    mono_font::{MonoTextStyleBuilder, ascii::FONT_6X10},
+    mono_font::{MonoTextStyleBuilder, ascii::FONT_9X15},
     pixelcolor::BinaryColor,
     prelude::*,
     text::Text,
@@ -34,7 +34,7 @@ pub async fn init<'a>(i2c: &'a mut I2c<'a, Async>) -> Result<Display<'a>, HwErro
 
 pub async fn update_status(status: &str, display: &mut Display<'_>) -> Result<(), HwError> {
     let text_style = MonoTextStyleBuilder::new()
-        .font(&FONT_6X10)
+        .font(&FONT_9X15)
         .text_color(BinaryColor::On)
         .build();
 

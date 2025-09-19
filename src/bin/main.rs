@@ -22,12 +22,11 @@ use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_hal_embassy::Executor;
 use esp_println::println;
 use static_cell::StaticCell;
-use water::display::update_status;
+use water::display;
 use water::io::gpio::led_init;
 use water::io::led::heartbeat;
 use water::io::wifi::{maintain_connection, wifi_hw_init};
 use water::net::stack::{init_net, net_task};
-use water::{display, io::i2c::display_i2c_init};
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
@@ -44,13 +43,12 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
 
-    let mut display_i2c =
-        display_i2c_init(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22)
-            .await
-            .unwrap();
-    println!("Init display I2C");
-    let mut display = display::init(&mut display_i2c).await.unwrap();
-    update_status("WiFi init", &mut display).await.unwrap();
+    println!("Init display");
+    let display = display::init(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22)
+        .await
+        .unwrap();
+
+    display.update_status("WiFi init").await.unwrap();
 
     let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI)
         .await
@@ -59,10 +57,10 @@ async fn main(spawner: Spawner) -> ! {
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
 
-    update_status("LED init", &mut display).await.unwrap();
+    display.update_status("LED init").await.unwrap();
     let led = led_init(peripherals.GPIO2).await;
 
-    update_status("CPU 2 init", &mut display).await.unwrap();
+    display.update_status("CPU 2 init").await.unwrap();
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
 
     let _guard = cpu_control

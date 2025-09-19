@@ -36,17 +36,13 @@ async fn main(spawner: Spawner) -> ! {
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
 
-    let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
-
-    let timg1 = TimerGroup::new(peripherals.TIMG1);
-    esp_hal_embassy::init(timg1.timer0);
+    let wifi_timer = TimerGroup::new(peripherals.TIMG0).timer0;
 
     let led = led_init(peripherals.GPIO2).await;
 
     update_status("App core starting").await.unwrap();
 
-    // Initialize app core with LED heartbeat task
     let _appcore_guard = start_appcore(peripherals.CPU_CTRL, {
         let led_pin = led;
         move |spawner| {
@@ -64,7 +60,7 @@ async fn main(spawner: Spawner) -> ! {
 
     update_status("WiFi init").await.unwrap();
 
-    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI, &spawner)
+    let wifi = wifi_hw_init(wifi_timer, rng, peripherals.WIFI, &spawner)
         .await
         .unwrap();
 

@@ -28,6 +28,8 @@ const DISPLAY_HEIGHT: i32 = 64;
 const FONT_HEIGHT: i32 = 15;
 const FONT_WIDTH: i32 = 15;
 
+const STATUS_BAR_HEIGHT: i32 = 16;
+
 const STATUS_LINE_TOP: i32 = DISPLAY_HEIGHT - FONT_HEIGHT - 1;
 
 const STATUS_LEN: usize = DISPLAY_WIDTH as usize / FONT_WIDTH as usize;
@@ -47,6 +49,7 @@ pub struct DisplayHandle {
 impl DisplayHandle {
     async fn markup(&self) -> Result<(), UIError> {
         let mut display = self.display_mutex.lock().await;
+        gui::draw_status_bar(&mut *display).await?;
         Ok(gui::draw_markup(&mut *display).await?)
     }
 
@@ -111,7 +114,7 @@ pub async fn init(
     static DISPLAY_MUTEX: StaticCell<Mutex<CriticalSectionRawMutex, Display<'static>>> =
         StaticCell::new();
     let display_mutex = DISPLAY_MUTEX.init(Mutex::new(display));
-    
+
     Ok(DisplayHandle { display_mutex })
 }
 

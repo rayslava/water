@@ -8,11 +8,8 @@
 #![no_std]
 #![no_main]
 
-use core::fmt::Write;
-use core::net::Ipv4Addr;
-use heapless::String;
-
 use embassy_executor::Spawner;
+use embassy_net::dns::DnsQueryType;
 use embassy_net::tcp::TcpSocket;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
@@ -20,10 +17,12 @@ use esp_backtrace as _;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use water::appcore::start_appcore;
-use water::display::{STATUS_LEN, display_task, update_status};
+use water::display::{display_task, update_status};
 use water::io::gpio::led_init;
-use water::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, heartbeat, set_heartbeat};
+use water::io::led::{HEARTBEAT_DEFAULT, heartbeat, set_heartbeat};
+use water::io::rtc;
 use water::io::wifi::wifi_hw_init;
+use water::net::ntp::NtpClient;
 use water::net::stack::{init_net, wait_for_ip, wait_for_link};
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -44,6 +43,8 @@ async fn main(spawner: Spawner) -> ! {
     esp_hal_embassy::init(embassy_timer);
 
     let led = led_init(peripherals.GPIO2).await;
+
+    rtc::init(peripherals.LPWR).await;
 
     update_status("App core starting").await.unwrap();
 
@@ -73,15 +74,12 @@ async fn main(spawner: Spawner) -> ! {
     // Init network stack
     let stack = init_net(wifi, seed, &spawner).await.unwrap();
 
-    set_heartbeat(HEARTBEAT_NET_AWAIT);
-    update_status("Connecting").await.unwrap();
     wait_for_link(stack).await;
-
-    let ip = wait_for_ip(stack).await;
-    let mut ip_string: String<STATUS_LEN> = String::new();
-    write!(ip_string, "IP: {}", ip.address()).unwrap();
-    update_status(&ip_string).await.unwrap();
+    wait_for_ip(stack).await;
     set_heartbeat(HEARTBEAT_DEFAULT);
+
+    let ntp = NtpClient::new(&stack);
+    ntp.sync().await.ok();
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
@@ -92,7 +90,10 @@ async fn main(spawner: Spawner) -> ! {
 
         socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 
-        let remote_endpoint = (Ipv4Addr::new(142, 250, 185, 115), 80);
+        let url = "www.mobile-j.de";
+
+        let remote_address = stack.dns_query(url, DnsQueryType::A).await.unwrap();
+        let remote_endpoint = (remote_address[0], 80);
         println!("connecting...");
         let r = socket.connect(remote_endpoint).await;
         if let Err(e) = r {

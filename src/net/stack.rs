@@ -1,10 +1,16 @@
+use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_wifi::wifi::WifiDevice;
+use heapless::String;
 use static_cell::StaticCell;
 
-use crate::error::SysError;
+use crate::{
+    display::{STATUS_LEN, update_status},
+    error::SysError,
+    io::led::{HEARTBEAT_NET_AWAIT, set_heartbeat},
+};
 
 pub async fn init_net(
     driver: WifiDevice<'static>,
@@ -31,6 +37,8 @@ async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
 const NET_REFRESH_TIME: Duration = Duration::from_millis(500);
 
 pub async fn wait_for_link(stack: Stack<'static>) {
+    set_heartbeat(HEARTBEAT_NET_AWAIT);
+    update_status("Waiting for net").await.ok();
     loop {
         if stack.is_link_up() {
             break;
@@ -40,8 +48,14 @@ pub async fn wait_for_link(stack: Stack<'static>) {
 }
 
 pub async fn wait_for_ip(stack: Stack<'static>) -> Ipv4Cidr {
+    set_heartbeat(HEARTBEAT_NET_AWAIT);
+    update_status("Waiting for IP").await.ok();
     loop {
         if let Some(config) = stack.config_v4() {
+            let mut ip_string: String<STATUS_LEN> = String::new();
+            write!(ip_string, "IP: {}", config.address.address()).unwrap();
+            update_status(&ip_string).await.unwrap();
+
             return config.address;
         }
         Timer::after(NET_REFRESH_TIME).await;

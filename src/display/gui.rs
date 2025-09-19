@@ -1,3 +1,4 @@
+use core::fmt::Write;
 use embedded_graphics::{
     Drawable,
     mono_font::{MonoFont, MonoTextStyleBuilder},
@@ -6,10 +7,11 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle, Rectangle},
     text::{Baseline, Text},
 };
+use heapless::String;
 
-use crate::error::UIError;
+use crate::{error::UIError, time::localtime};
 
-use super::{DISPLAY_WIDTH, FONT_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
+use super::{DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
 
 pub(crate) async fn draw_markup(
     target: &mut impl DrawTarget<Color = BinaryColor>,
@@ -59,8 +61,14 @@ async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result
         .font(&CLOCK_FONT)
         .text_color(BinaryColor::On)
         .build();
+    let mut timestring: String<5> = String::new();
+    if let Ok(time) = localtime().await {
+        write!(timestring, "{:02}:{:02}", time.hour(), time.minute()).ok();
+    } else {
+        write!(timestring, "--:--").ok();
+    }
     Ok(Text::with_baseline(
-        "00:00",
+        &timestring,
         Point::new(DISPLAY_WIDTH - TIME_WIDTH, 1),
         text_style,
         Baseline::Top,
@@ -69,11 +77,11 @@ async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result
     .map_err(|_| UIError::DrawError)?)
 }
 
-async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+async fn draw_wifi(_target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
     Ok(())
 }
 
-async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+async fn draw_net(_target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
     Ok(())
 }
 

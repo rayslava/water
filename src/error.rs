@@ -44,6 +44,8 @@ pub enum SysError {
     Spawn(#[from] SpawnError),
     Hardware(#[from] HwError),
     System(#[from] SystemError),
+    Time(#[from] jiff::Error),
+    TimerSetup,
 }
 
 // Generate transitive From implementations

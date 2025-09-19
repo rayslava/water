@@ -31,7 +31,7 @@ const STATUS_BAR_HEIGHT: i32 = 16;
 
 const STATUS_LINE_TOP: i32 = DISPLAY_HEIGHT - FONT_HEIGHT - 1;
 
-const STATUS_LEN: usize = DISPLAY_WIDTH as usize / FONT_WIDTH as usize;
+pub const STATUS_LEN: usize = DISPLAY_WIDTH as usize / FONT_WIDTH as usize;
 
 pub type Display<'a> = Ssd1306Async<
     I2CInterface<&'a mut I2c<'a, Async>>,

@@ -31,7 +31,7 @@ const CLOCK_FONT_WIDTH: i32 = CLOCK_FONT.character_size.width as i32;
 const TIME_WIDTH: i32 = CLOCK_FONT_WIDTH * 5; // HH:MM
 
 const BATTERY_WIDTH: u32 = 32;
-const BATTERY_X: i32 = DISPLAY_WIDTH - TIME_WIDTH - BATTERY_WIDTH as i32 - 2;
+const BATTERY_X: i32 = DISPLAY_WIDTH - TIME_WIDTH - BATTERY_WIDTH as i32 - 3;
 const BATTERY_HEIGHT: u32 = STATUS_BAR_HEIGHT as u32 - 1;
 
 async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {

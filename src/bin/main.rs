@@ -20,7 +20,7 @@ use esp_backtrace as _;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use water::appcore::start_appcore;
-use water::display::{display_task, update_status};
+use water::display::{STATUS_LEN, display_task, update_status};
 use water::io::gpio::led_init;
 use water::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, heartbeat, set_heartbeat};
 use water::io::wifi::wifi_hw_init;
@@ -78,7 +78,7 @@ async fn main(spawner: Spawner) -> ! {
     wait_for_link(stack).await;
 
     let ip = wait_for_ip(stack).await;
-    let mut ip_string: String<32> = String::new();
+    let mut ip_string: String<STATUS_LEN> = String::new();
     write!(ip_string, "IP: {}", ip.address()).unwrap();
     update_status(&ip_string).await.unwrap();
     set_heartbeat(HEARTBEAT_DEFAULT);

@@ -1,4 +1,7 @@
+use crate::display::{STATUS_LEN, update_status};
 use crate::error::SysError;
+use crate::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, set_heartbeat};
+use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::{peripherals::WIFI, rng::Rng, timer::timg::Timer as HalTimer};
@@ -8,6 +11,7 @@ use esp_wifi::{
     EspWifiController, init,
     wifi::{WifiController, WifiDevice, new},
 };
+use heapless::String;
 use static_cell::StaticCell;
 
 const SSID: &str = env!("SSID");
@@ -37,14 +41,15 @@ pub async fn wifi_hw_init(
 // We have to run this function in the background to keep the wifi on
 #[embassy_executor::task]
 async fn maintain_connection(mut controller: WifiController<'static>) {
-    println!("start connection task");
-    println!("Device capabilities: {:?}", controller.capabilities());
     loop {
         if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
+            update_status("WiFi disconnected").await.ok();
+            set_heartbeat(HEARTBEAT_NET_AWAIT);
             Timer::after(RECONNECT_DELAY).await
         }
+
         if !matches!(controller.is_started(), Ok(true)) {
             let client_config = Configuration::Client(ClientConfiguration {
                 ssid: SSID.into(),
@@ -52,22 +57,27 @@ async fn maintain_connection(mut controller: WifiController<'static>) {
                 ..Default::default()
             });
             controller.set_configuration(&client_config).unwrap();
-            println!("Starting wifi");
+            update_status("Starting WiFi").await.ok();
             controller.start_async().await.unwrap();
-            println!("Wifi started!");
-
-            println!("Scan");
+            update_status("WiFi scan").await.ok();
             let result = controller.scan_n_async(10).await.unwrap();
             for ap in result {
                 println!("{:?}", ap);
             }
         }
-        println!("About to connect...");
+
+        update_status("Connecting to WiFi").await.ok();
 
         match controller.connect_async().await {
-            Ok(_) => println!("Wifi connected!"),
+            Ok(_) => {
+                update_status("Wifi connected!").await.ok();
+                set_heartbeat(HEARTBEAT_DEFAULT);
+            }
             Err(e) => {
-                println!("Failed to connect to wifi: {e:?}");
+                set_heartbeat(HEARTBEAT_NET_AWAIT);
+                let mut errstring: String<STATUS_LEN> = String::new();
+                write!(errstring, "WiFi fail: {:?}", e).ok();
+                update_status(&errstring).await.ok();
                 Timer::after(RECONNECT_DELAY).await
             }
         }

@@ -25,8 +25,8 @@ use static_cell::StaticCell;
 use water::display;
 use water::io::gpio::led_init;
 use water::io::led::heartbeat;
-use water::io::wifi::{maintain_connection, wifi_hw_init};
-use water::net::stack::{init_net, net_task};
+use water::io::wifi::wifi_hw_init;
+use water::net::stack::init_net;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
@@ -49,8 +49,9 @@ async fn main(spawner: Spawner) -> ! {
         .unwrap();
 
     display.update_status("WiFi init").await.unwrap();
+    display.clear().await.unwrap();
 
-    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI)
+    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI, &spawner)
         .await
         .unwrap();
 
@@ -58,9 +59,11 @@ async fn main(spawner: Spawner) -> ! {
     esp_hal_embassy::init(timg1.timer0);
 
     display.update_status("LED init").await.unwrap();
+    display.clear().await.unwrap();
     let led = led_init(peripherals.GPIO2).await;
 
     display.update_status("CPU 2 init").await.unwrap();
+    display.clear().await.unwrap();
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
 
     let _guard = cpu_control
@@ -76,10 +79,7 @@ async fn main(spawner: Spawner) -> ! {
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 
     // Init network stack
-    let (stack, runner) = init_net(wifi.interface, seed).await;
-
-    spawner.spawn(maintain_connection(wifi.controller)).ok();
-    spawner.spawn(net_task(runner)).ok();
+    let stack = init_net(wifi, seed, &spawner).await.unwrap();
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];

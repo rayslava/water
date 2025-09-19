@@ -1,20 +1,9 @@
 use core::str::Utf8Error;
 use display_interface::DisplayError;
+use embassy_executor::SpawnError;
 use esp_wifi::InitializationError;
 use esp_wifi::wifi::WifiError;
 use thiserror_no_std::Error;
-
-macro_rules! transitive_from {
-    ($($to:ty: $from:ty => $via:ident),* $(,)?) => {
-        $(
-            impl From<$from> for $to {
-                fn from(err: $from) -> Self {
-                    Self::$via(err.into())
-                }
-            }
-        )*
-    };
-}
 
 #[derive(Debug, Error)]
 pub enum I2cError {
@@ -48,7 +37,25 @@ pub enum UIError {
     Hardware(#[from] HwError),
 }
 
+#[derive(Debug, Error)]
+pub enum SysError {
+    Spawn(#[from] SpawnError),
+    Hardware(#[from] HwError),
+}
+
 // Generate transitive From implementations
+macro_rules! transitive_from {
+    ($($to:ty: $from:ty => $via:ident),* $(,)?) => {
+        $(
+            impl From<$from> for $to {
+                fn from(err: $from) -> Self {
+                    Self::$via(err.into())
+                }
+            }
+        )*
+    };
+}
+
 transitive_from!(
     UIError: Utf8Error => Conversion,
     UIError: DisplayError => Hardware,
@@ -56,4 +63,6 @@ transitive_from!(
     UIError: InitializationError => Hardware,
     UIError: WifiError => Hardware,
     UIError: GpioError => Hardware,
+    SysError: InitializationError => Hardware,
+    SysError: WifiError => Hardware,
 );

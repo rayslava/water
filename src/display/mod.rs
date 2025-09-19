@@ -2,13 +2,13 @@ use crate::error::{ConversionError, HwError, UIError};
 use crate::io::i2c::display_i2c_init;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
-use embedded_graphics::primitives::PrimitiveStyle;
+use embassy_time::{Duration, Timer};
+use embedded_graphics::Drawable;
+use embedded_graphics::prelude::Point;
 use embedded_graphics::text::Baseline;
 use embedded_graphics::{
     mono_font::{MonoTextStyleBuilder, ascii::FONT_9X15},
     pixelcolor::BinaryColor,
-    prelude::*,
-    primitives::Line,
     text::Text,
 };
 use esp_hal::Async;
@@ -20,6 +20,7 @@ use ssd1306::rotation::DisplayRotation;
 use ssd1306::size::DisplaySize128x64;
 use ssd1306::{I2CDisplayInterface, Ssd1306Async};
 use static_cell::StaticCell;
+mod gui;
 
 const DISPLAY_WIDTH: i32 = 128;
 const DISPLAY_HEIGHT: i32 = 64;
@@ -37,22 +38,16 @@ pub type Display<'a> = Ssd1306Async<
     BufferedGraphicsModeAsync<DisplaySize128x64>,
 >;
 
+static STATUS: Mutex<CriticalSectionRawMutex, [u8; STATUS_LEN]> = Mutex::new([0u8; STATUS_LEN]);
+
 pub struct DisplayHandle {
     display_mutex: &'static Mutex<CriticalSectionRawMutex, Display<'static>>,
-    status: &'static Mutex<CriticalSectionRawMutex, [u8; STATUS_LEN]>,
 }
 
 impl DisplayHandle {
-    async fn markup(&self) -> Result<(), HwError> {
+    async fn markup(&self) -> Result<(), UIError> {
         let mut display = self.display_mutex.lock().await;
-
-        // The status bar separation
-        Ok(Line::new(
-            Point::new(0, STATUS_LINE_TOP),
-            Point::new(DISPLAY_WIDTH, STATUS_LINE_TOP),
-        )
-        .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-        .draw(&mut *display)?)
+        Ok(gui::draw_markup(&mut *display).await?)
     }
 
     async fn print_status(&self) -> Result<(), UIError> {
@@ -62,7 +57,7 @@ impl DisplayHandle {
             .build();
 
         let mut display = self.display_mutex.lock().await;
-        let status = self.status.lock().await;
+        let status = STATUS.lock().await;
 
         // Convert &[u8] to &str
         let status_str = core::str::from_utf8(&*status)?;
@@ -74,15 +69,6 @@ impl DisplayHandle {
             Baseline::Top,
         )
         .draw(&mut *display)?;
-        Ok(())
-    }
-
-    pub async fn update_status(&self, new_status: &str) -> Result<(), ConversionError> {
-        let new_status_buf: &[u8] = new_status.as_bytes();
-        let copy_len = (new_status_buf.len()).min(STATUS_LEN - 1);
-        let mut status: [u8; STATUS_LEN] = *self.status.lock().await;
-        status.fill(0);
-        status.copy_from_slice(&new_status_buf[..copy_len]);
         Ok(())
     }
 
@@ -125,13 +111,30 @@ pub async fn init(
     static DISPLAY_MUTEX: StaticCell<Mutex<CriticalSectionRawMutex, Display<'static>>> =
         StaticCell::new();
     let display_mutex = DISPLAY_MUTEX.init(Mutex::new(display));
+    
+    Ok(DisplayHandle { display_mutex })
+}
 
-    static STATUS_MUTEX: StaticCell<Mutex<CriticalSectionRawMutex, [u8; STATUS_LEN]>> =
-        StaticCell::new();
-    let status = STATUS_MUTEX.init(Mutex::new([0u8; STATUS_LEN]));
+pub async fn update_status(new_status: &str) -> Result<(), ConversionError> {
+    let new_status_buf: &[u8] = new_status.as_bytes();
+    let copy_len = (new_status_buf.len()).min(STATUS_LEN - 1);
+    let mut status: [u8; STATUS_LEN] = *STATUS.lock().await;
+    status.fill(0);
+    status.copy_from_slice(&new_status_buf[..copy_len]);
+    Ok(())
+}
 
-    Ok(DisplayHandle {
-        display_mutex,
-        status,
-    })
+const DISPLAY_REFRESH_TIME: Duration = Duration::from_millis(500);
+
+#[embassy_executor::task]
+pub async fn display_task(
+    i2c_peripheral: I2C0<'static>,
+    sda: GPIO21<'static>,
+    scl: GPIO22<'static>,
+) {
+    let display = init(i2c_peripheral, sda, scl).await.unwrap();
+    loop {
+        display.clear().await.unwrap();
+        Timer::after(DISPLAY_REFRESH_TIME).await;
+    }
 }

@@ -36,6 +36,7 @@ pub enum HwError {
 pub enum UIError {
     Conversion(#[from] ConversionError),
     Hardware(#[from] HwError),
+    DrawError,
 }
 
 #[derive(Debug, Error)]

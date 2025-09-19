@@ -20,7 +20,7 @@ use esp_backtrace as _;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use water::appcore::start_appcore;
-use water::display;
+use water::display::{display_task, update_status};
 use water::io::gpio::led_init;
 use water::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, heartbeat, set_heartbeat};
 use water::io::wifi::wifi_hw_init;
@@ -39,31 +39,30 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
 
-    let display = display::init(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22)
-        .await
-        .unwrap();
-
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
 
-    display.update_status("Heartbeat init").await.unwrap();
-    display.clear().await.unwrap();
     let led = led_init(peripherals.GPIO2).await;
 
-    display.update_status("CPU 2 init").await.unwrap();
-    display.clear().await.unwrap();
+    update_status("App core starting").await.unwrap();
 
     // Initialize app core with LED heartbeat task
     let _appcore_guard = start_appcore(peripherals.CPU_CTRL, {
         let led_pin = led;
         move |spawner| {
             spawner.spawn(heartbeat(led_pin)).ok();
+            spawner
+                .spawn(display_task(
+                    peripherals.I2C0,
+                    peripherals.GPIO21,
+                    peripherals.GPIO22,
+                ))
+                .ok();
         }
     })
     .unwrap();
 
-    display.update_status("WiFi init").await.unwrap();
-    display.clear().await.unwrap();
+    update_status("WiFi init").await.unwrap();
 
     let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI, &spawner)
         .await
@@ -75,13 +74,13 @@ async fn main(spawner: Spawner) -> ! {
     let stack = init_net(wifi, seed, &spawner).await.unwrap();
 
     set_heartbeat(HEARTBEAT_NET_AWAIT);
-    display.update_status("Connecting").await.unwrap();
+    update_status("Connecting").await.unwrap();
     wait_for_link(stack).await;
 
     let ip = wait_for_ip(stack).await;
     let mut ip_string: String<32> = String::new();
     write!(ip_string, "IP: {}", ip.address()).unwrap();
-    display.update_status(&ip_string).await.unwrap();
+    update_status(&ip_string).await.unwrap();
     set_heartbeat(HEARTBEAT_DEFAULT);
 
     let mut rx_buffer = [0; 4096];

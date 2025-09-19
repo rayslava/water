@@ -39,6 +39,10 @@ async fn main(spawner: Spawner) -> ! {
     let mut rng = Rng::new(peripherals.RNG);
     let wifi_timer = TimerGroup::new(peripherals.TIMG0).timer0;
 
+    // We need second timer for Embassy to work
+    let embassy_timer = TimerGroup::new(peripherals.TIMG1).timer0;
+    esp_hal_embassy::init(embassy_timer);
+
     let led = led_init(peripherals.GPIO2).await;
 
     update_status("App core starting").await.unwrap();
@@ -119,6 +123,6 @@ async fn main(spawner: Spawner) -> ! {
             };
             println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
         }
-        Timer::after(Duration::from_millis(3000)).await;
+        Timer::after(Duration::from_millis(20000)).await;
     }
 }

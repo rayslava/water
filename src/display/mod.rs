@@ -4,13 +4,10 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use embedded_graphics::Drawable;
+use embedded_graphics::mono_font::MonoFont;
 use embedded_graphics::prelude::Point;
 use embedded_graphics::text::Baseline;
-use embedded_graphics::{
-    mono_font::{MonoTextStyleBuilder, ascii::FONT_9X15},
-    pixelcolor::BinaryColor,
-    text::Text,
-};
+use embedded_graphics::{mono_font::MonoTextStyleBuilder, pixelcolor::BinaryColor, text::Text};
 use esp_hal::Async;
 use esp_hal::i2c::master::I2c;
 use esp_hal::peripherals::{GPIO21, GPIO22, I2C0};
@@ -22,11 +19,13 @@ use ssd1306::{I2CDisplayInterface, Ssd1306Async};
 use static_cell::StaticCell;
 mod gui;
 
+const MAIN_FONT: MonoFont<'_> = embedded_graphics::mono_font::ascii::FONT_6X12;
+
 const DISPLAY_WIDTH: i32 = 128;
 const DISPLAY_HEIGHT: i32 = 64;
 
-const FONT_HEIGHT: i32 = 15;
-const FONT_WIDTH: i32 = 15;
+const FONT_HEIGHT: i32 = MAIN_FONT.character_size.height as i32;
+const FONT_WIDTH: i32 = MAIN_FONT.character_size.width as i32;
 
 const STATUS_BAR_HEIGHT: i32 = 16;
 
@@ -55,19 +54,23 @@ impl DisplayHandle {
 
     async fn print_status(&self) -> Result<(), UIError> {
         let text_style = MonoTextStyleBuilder::new()
-            .font(&FONT_9X15)
+            .font(&MAIN_FONT)
             .text_color(BinaryColor::On)
             .build();
 
         let mut display = self.display_mutex.lock().await;
         let status = STATUS.lock().await;
 
-        // Convert &[u8] to &str
-        let status_str = core::str::from_utf8(&*status)?;
+        // Convert &[u8] to null-ending &str
+        let status_str: &str = if let Some(null) = status.iter().position(|&b| b == 0) {
+            core::str::from_utf8(&status[..null])?
+        } else {
+            core::str::from_utf8(&*status)?
+        };
 
         Text::with_baseline(
             status_str,
-            Point::new(0, DISPLAY_HEIGHT - FONT_HEIGHT),
+            Point::new(0, DISPLAY_HEIGHT - FONT_HEIGHT as i32),
             text_style,
             Baseline::Top,
         )
@@ -120,10 +123,10 @@ pub async fn init(
 
 pub async fn update_status(new_status: &str) -> Result<(), ConversionError> {
     let new_status_buf: &[u8] = new_status.as_bytes();
-    let copy_len = (new_status_buf.len()).min(STATUS_LEN - 1);
-    let mut status: [u8; STATUS_LEN] = *STATUS.lock().await;
+    let copy_len = (new_status_buf.len()).min(STATUS_LEN);
+    let status: &mut [u8; STATUS_LEN] = &mut *STATUS.lock().await;
     status.fill(0);
-    status.copy_from_slice(&new_status_buf[..copy_len]);
+    status[..copy_len].copy_from_slice(&new_status_buf[..copy_len]);
     Ok(())
 }
 

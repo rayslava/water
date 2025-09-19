@@ -23,8 +23,8 @@ pub async fn heartbeat(mut led: Output<'static>) {
         }
 
         Timer::after(duration).await;
-        led.set_low();
-        Timer::after(HEARTBEAT_BLINK_TIME).await;
         led.set_high();
+        Timer::after(HEARTBEAT_BLINK_TIME).await;
+        led.set_low();
     }
 }

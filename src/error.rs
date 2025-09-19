@@ -1,6 +1,7 @@
 use core::str::Utf8Error;
 use display_interface::DisplayError;
 use embassy_executor::SpawnError;
+use esp_hal::system::Error as SystemError;
 use esp_wifi::InitializationError;
 use esp_wifi::wifi::WifiError;
 use thiserror_no_std::Error;
@@ -41,6 +42,7 @@ pub enum UIError {
 pub enum SysError {
     Spawn(#[from] SpawnError),
     Hardware(#[from] HwError),
+    System(#[from] SystemError),
 }
 
 // Generate transitive From implementations

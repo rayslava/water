@@ -27,7 +27,6 @@ const DISPLAY_HEIGHT: i32 = 64;
 const FONT_HEIGHT: i32 = 15;
 const FONT_WIDTH: i32 = 15;
 
-const HW_INFO_LINE_BOTTOM: i32 = 16;
 const STATUS_LINE_TOP: i32 = DISPLAY_HEIGHT - FONT_HEIGHT - 1;
 
 const STATUS_LEN: usize = DISPLAY_WIDTH as usize / FONT_WIDTH as usize;

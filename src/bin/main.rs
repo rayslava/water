@@ -10,26 +10,20 @@
 
 use core::net::Ipv4Addr;
 
-use core::ptr::addr_of_mut;
-
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
-use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
-use esp_hal_embassy::Executor;
 use esp_println::println;
-use static_cell::StaticCell;
+use water::appcore::start_appcore;
 use water::display;
 use water::io::gpio::led_init;
 use water::io::led::heartbeat;
 use water::io::wifi::wifi_hw_init;
 use water::net::stack::init_net;
 esp_bootloader_esp_idf::esp_app_desc!();
-
-static mut APP_CORE_STACK: Stack<8192> = Stack::new();
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) -> ! {
@@ -64,17 +58,16 @@ async fn main(spawner: Spawner) -> ! {
 
     display.update_status("CPU 2 init").await.unwrap();
     display.clear().await.unwrap();
-    let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
 
-    let _guard = cpu_control
-        .start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
-            static EXECUTOR: StaticCell<Executor> = StaticCell::new();
-            let executor = EXECUTOR.init(Executor::new());
-            executor.run(|spawner| {
-                spawner.spawn(heartbeat(led.led, led.control_signal)).ok();
-            });
-        })
-        .unwrap();
+    // Initialize app core with LED heartbeat task
+    let _appcore_guard = start_appcore(peripherals.CPU_CTRL, {
+        let led_pin = led.led;
+        let control_sig = led.control_signal;
+        move |spawner| {
+            spawner.spawn(heartbeat(led_pin, control_sig)).ok();
+        }
+    })
+    .unwrap();
 
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 

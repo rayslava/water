@@ -1,5 +1,6 @@
 use embassy_executor::Spawner;
 use embassy_net::{Runner, Stack, StackResources};
+use embassy_time::{Duration, Timer};
 use esp_wifi::wifi::WifiDevice;
 use static_cell::StaticCell;
 
@@ -21,8 +22,19 @@ pub async fn init_net(
     Ok(stack)
 }
 
-// We have to run the function in background to make the stack work
+// We have to run the task in background to make the stack work
 #[embassy_executor::task]
 async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await
+}
+
+const NET_REFRESH_TIME: Duration = Duration::from_millis(500);
+
+pub async fn wait_for_link(stack: Stack<'static>) {
+    loop {
+        if stack.is_link_up() {
+            break;
+        }
+        Timer::after(NET_REFRESH_TIME).await;
+    }
 }

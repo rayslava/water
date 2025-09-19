@@ -86,12 +86,12 @@ impl DisplayHandle {
         Ok(())
     }
 
-    pub async fn clear_buffer(&self) {
+    async fn clear_buffer(&self) {
         let mut display = self.display_mutex.lock().await;
         display.clear_buffer()
     }
 
-    pub async fn flush(&self) -> Result<(), HwError> {
+    async fn flush(&self) -> Result<(), HwError> {
         let mut display = self.display_mutex.lock().await;
         Ok(display.flush().await?)
     }
@@ -100,6 +100,7 @@ impl DisplayHandle {
         self.clear_buffer().await;
         self.markup().await?;
         self.print_status().await?;
+        self.flush().await?;
         Ok(())
     }
 }

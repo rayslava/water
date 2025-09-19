@@ -20,9 +20,9 @@ use esp_println::println;
 use water::appcore::start_appcore;
 use water::display;
 use water::io::gpio::led_init;
-use water::io::led::heartbeat;
+use water::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, heartbeat, set_heartbeat};
 use water::io::wifi::wifi_hw_init;
-use water::net::stack::init_net;
+use water::net::stack::{init_net, wait_for_link};
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_hal_embassy::main]
@@ -42,13 +42,6 @@ async fn main(spawner: Spawner) -> ! {
         .await
         .unwrap();
 
-    display.update_status("WiFi init").await.unwrap();
-    display.clear().await.unwrap();
-
-    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI, &spawner)
-        .await
-        .unwrap();
-
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
 
@@ -61,29 +54,31 @@ async fn main(spawner: Spawner) -> ! {
 
     // Initialize app core with LED heartbeat task
     let _appcore_guard = start_appcore(peripherals.CPU_CTRL, {
-        let led_pin = led.led;
-        let control_sig = led.control_signal;
+        let led_pin = led;
         move |spawner| {
-            spawner.spawn(heartbeat(led_pin, control_sig)).ok();
+            spawner.spawn(heartbeat(led_pin)).ok();
         }
     })
     .unwrap();
+
+    display.update_status("WiFi init").await.unwrap();
+    display.clear().await.unwrap();
+
+    let wifi = wifi_hw_init(timg0.timer0, rng, peripherals.WIFI, &spawner)
+        .await
+        .unwrap();
 
     let seed = (rng.random() as u64) << 32 | rng.random() as u64;
 
     // Init network stack
     let stack = init_net(wifi, seed, &spawner).await.unwrap();
 
+    set_heartbeat(HEARTBEAT_NET_AWAIT);
+    display.update_status("Connecting").await.unwrap();
+    wait_for_link(stack).await;
+
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
-
-    loop {
-        if stack.is_link_up() {
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
-
     println!("Waiting to get IP address...");
     loop {
         if let Some(config) = stack.config_v4() {
@@ -93,10 +88,10 @@ async fn main(spawner: Spawner) -> ! {
         Timer::after(Duration::from_millis(500)).await;
     }
 
+    set_heartbeat(HEARTBEAT_DEFAULT);
+
     loop {
         Timer::after(Duration::from_millis(1_000)).await;
-
-        led.control_signal.signal(true);
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
         socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
@@ -133,6 +128,5 @@ async fn main(spawner: Spawner) -> ! {
             println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
         }
         Timer::after(Duration::from_millis(3000)).await;
-        led.control_signal.signal(false);
     }
 }

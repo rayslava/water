@@ -8,7 +8,9 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Write;
 use core::net::Ipv4Addr;
+use heapless::String;
 
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
@@ -22,7 +24,7 @@ use water::display;
 use water::io::gpio::led_init;
 use water::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, heartbeat, set_heartbeat};
 use water::io::wifi::wifi_hw_init;
-use water::net::stack::{init_net, wait_for_link};
+use water::net::stack::{init_net, wait_for_ip, wait_for_link};
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_hal_embassy::main]
@@ -37,7 +39,6 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let mut rng = Rng::new(peripherals.RNG);
 
-    println!("Init display");
     let display = display::init(peripherals.I2C0, peripherals.GPIO21, peripherals.GPIO22)
         .await
         .unwrap();
@@ -45,7 +46,7 @@ async fn main(spawner: Spawner) -> ! {
     let timg1 = TimerGroup::new(peripherals.TIMG1);
     esp_hal_embassy::init(timg1.timer0);
 
-    display.update_status("LED init").await.unwrap();
+    display.update_status("Heartbeat init").await.unwrap();
     display.clear().await.unwrap();
     let led = led_init(peripherals.GPIO2).await;
 
@@ -77,18 +78,14 @@ async fn main(spawner: Spawner) -> ! {
     display.update_status("Connecting").await.unwrap();
     wait_for_link(stack).await;
 
+    let ip = wait_for_ip(stack).await;
+    let mut ip_string: String<32> = String::new();
+    write!(ip_string, "IP: {}", ip.address()).unwrap();
+    display.update_status(&ip_string).await.unwrap();
+    set_heartbeat(HEARTBEAT_DEFAULT);
+
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
-    println!("Waiting to get IP address...");
-    loop {
-        if let Some(config) = stack.config_v4() {
-            println!("Got IP: {}", config.address);
-            break;
-        }
-        Timer::after(Duration::from_millis(500)).await;
-    }
-
-    set_heartbeat(HEARTBEAT_DEFAULT);
 
     loop {
         Timer::after(Duration::from_millis(1_000)).await;

@@ -39,6 +39,7 @@ embedded-io = "0.6"
 embedded-io-async = "0.6"
 mqttrust = "0.6"
 esp-alloc = "0.8"
+heapless = "0.8"
 esp-backtrace = { version = "0.17", features = [
   "exception-handler",
   "panic-handler",

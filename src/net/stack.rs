@@ -1,5 +1,5 @@
 use embassy_executor::Spawner;
-use embassy_net::{Runner, Stack, StackResources};
+use embassy_net::{Ipv4Cidr, Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_wifi::wifi::WifiDevice;
 use static_cell::StaticCell;
@@ -34,6 +34,15 @@ pub async fn wait_for_link(stack: Stack<'static>) {
     loop {
         if stack.is_link_up() {
             break;
+        }
+        Timer::after(NET_REFRESH_TIME).await;
+    }
+}
+
+pub async fn wait_for_ip(stack: Stack<'static>) -> Ipv4Cidr {
+    loop {
+        if let Some(config) = stack.config_v4() {
+            return config.address;
         }
         Timer::after(NET_REFRESH_TIME).await;
     }

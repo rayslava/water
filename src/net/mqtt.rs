@@ -37,8 +37,13 @@ async fn measure_latency(stack: &Stack<'_>) -> Result<Duration, NetError> {
     }
 }
 
-pub async fn latency() -> u64 {
-    (*LATENCY.lock().await).as_millis()
+pub async fn latency() -> Result<u64, NetError> {
+    let ping = (*LATENCY.lock().await).as_millis();
+    if ping > 0 {
+        Ok(ping)
+    } else {
+        Err(NetError::Ping)
+    }
 }
 
 const MQTT_REFRESH_TIME: Duration = Duration::from_secs(3);

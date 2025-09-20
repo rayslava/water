@@ -35,6 +35,8 @@ const WIFI_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/wifi.raw"), WIFI_LOGO_SIZE);
 const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), WIFI_LOGO_SIZE);
+const NONET_IMAGE: ImageRaw<BinaryColor> =
+    ImageRaw::new(include_bytes!("../../icons/nonet.raw"), WIFI_LOGO_SIZE);
 
 const CLOCK_FONT: MonoFont<'_> = embedded_graphics::mono_font::ascii::FONT_9X15;
 const CLOCK_FONT_WIDTH: i32 = CLOCK_FONT.character_size.width as i32;
@@ -129,24 +131,29 @@ async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<P
         .font(&MAIN_FONT)
         .text_color(BinaryColor::On)
         .build();
-    let latency = latency().await;
     let mut pingstr: String<5> = String::new(); // 000ms
-    if latency < 1000 {
-        write!(pingstr, "{:03}ms", latency)?;
+    if let Ok(latency) = latency().await {
+        if latency < 1000 {
+            write!(pingstr, "{:03}ms", latency)?;
+        } else {
+            write!(pingstr, "{:03}s", latency / 1000)?;
+        }
+        Ok(Text::with_baseline(
+            &pingstr,
+            Point::new(
+                WIFI_LOGO_SIZE as i32 + 1,
+                (CLOCK_FONT.character_size.height - MAIN_FONT.character_size.height) as i32,
+            ),
+            text_style,
+            Baseline::Top,
+        )
+        .draw(&mut *target)
+        .map_err(|_| UIError::DrawError)?)
     } else {
-        write!(pingstr, "{:03}s", latency / 1000)?;
+        let image = Image::new(&NONET_IMAGE, Point::new(WIFI_LOGO_SIZE as i32 + 1 + 8, 0));
+        image.draw(&mut *target).map_err(|_| UIError::DrawError)?;
+        Ok(Point { x: 0, y: 0 })
     }
-    Ok(Text::with_baseline(
-        &pingstr,
-        Point::new(
-            WIFI_LOGO_SIZE as i32 + 1,
-            (CLOCK_FONT.character_size.height - MAIN_FONT.character_size.height) as i32,
-        ),
-        text_style,
-        Baseline::Top,
-    )
-    .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)?)
 }
 
 async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {

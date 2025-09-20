@@ -126,7 +126,6 @@ async fn main(spawner: Spawner) -> ! {
                     break;
                 }
             };
-            let line = core::str::from_utf8(&buf[..n]).unwrap();
             let mut response: String<STATUS_LEN> = String::new();
             write!(
                 response,

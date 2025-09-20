@@ -115,7 +115,7 @@ async fn main(spawner: Spawner) -> ! {
                 println!("write error: {:?}", e);
                 break;
             }
-            let n = match socket.read(&mut buf).await {
+            match socket.read(&mut buf).await {
                 Ok(0) => {
                     println!("read EOF");
                     break;

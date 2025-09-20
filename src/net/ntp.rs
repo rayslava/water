@@ -107,12 +107,15 @@ const NTP_REFRESH_TIME: Duration = Duration::from_secs(3600);
 #[embassy_executor::task]
 pub async fn ntp_task(client: NtpClient<'static>) {
     loop {
+	let timeout;
         update_status("Syncing NTP").await.ok();
         if let Ok(()) = client.sync().await {
             update_status("Time synced").await.ok();
+	    timeout = NTP_REFRESH_TIME;
         } else {
             update_status("NTP failed, proceeding").await.ok();
+	    timeout = Duration::from_secs(5);
         };
-        Timer::after(NTP_REFRESH_TIME).await;
+        Timer::after(timeout).await;
     }
 }

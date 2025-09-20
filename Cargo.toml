@@ -32,6 +32,7 @@ embassy-net = { version = "0.7", features = [
   "tcp",
   "udp",
   "dns",
+  "icmp",
 ] }
 embassy-time = { version = "0.5", features = ["log"] }
 embassy-sync = "0.7"

@@ -21,6 +21,7 @@ pub enum GpioError {
 #[derive(Debug, Error)]
 pub enum ConversionError {
     Utf(#[from] Utf8Error),
+    Format(#[from] core::fmt::Error),
 }
 
 #[derive(Debug, Error)]
@@ -43,6 +44,7 @@ pub enum UIError {
 pub enum NetError {
     Dns(#[from] embassy_net::dns::Error),
     Resolve,
+    Ping,
 }
 
 #[derive(Debug, Error)]
@@ -71,6 +73,7 @@ macro_rules! transitive_from {
 
 transitive_from!(
     UIError: Utf8Error => Conversion,
+    UIError: core::fmt::Error => Conversion,
     UIError: DisplayError => Hardware,
     UIError: I2cError => Hardware,
     UIError: InitializationError => Hardware,

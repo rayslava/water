@@ -1,3 +1,5 @@
+use crate::net::mqtt::latency;
+use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;
 use embedded_graphics::{
     Drawable,
@@ -10,10 +12,9 @@ use embedded_graphics::{
 };
 use heapless::String;
 
-use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
-
 use super::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_HEIGHT, STATUS_LINE_TOP,
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, MAIN_FONT, STATUS_BAR_HEIGHT, STATUS_LINE_HEIGHT,
+    STATUS_LINE_TOP,
 };
 
 pub(crate) async fn draw_markup(
@@ -28,6 +29,12 @@ pub(crate) async fn draw_markup(
     .draw(&mut *target)
     .map_err(|_| UIError::DrawError)?)
 }
+
+const WIFI_LOGO_SIZE: u32 = 16;
+const WIFI_IMAGE: ImageRaw<BinaryColor> =
+    ImageRaw::new(include_bytes!("../../icons/wifi.raw"), WIFI_LOGO_SIZE);
+const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
+    ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), WIFI_LOGO_SIZE);
 
 const CLOCK_FONT: MonoFont<'_> = embedded_graphics::mono_font::ascii::FONT_9X15;
 const CLOCK_FONT_WIDTH: i32 = CLOCK_FONT.character_size.width as i32;
@@ -108,10 +115,6 @@ async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result
 }
 
 async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
-    const WIFI_IMAGE: ImageRaw<BinaryColor> =
-        ImageRaw::new(include_bytes!("../../icons/wifi.raw"), 16);
-    const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
-        ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), 16);
     let image = if is_wifi_connected().await {
         Image::new(&WIFI_IMAGE, Point::zero())
     } else {
@@ -121,8 +124,29 @@ async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     Ok(())
 }
 
-async fn draw_net(_target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
-    Ok(())
+async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<Point, UIError> {
+    let text_style = MonoTextStyleBuilder::new()
+        .font(&MAIN_FONT)
+        .text_color(BinaryColor::On)
+        .build();
+    let latency = latency().await;
+    let mut pingstr: String<5> = String::new(); // 000ms
+    if latency < 1000 {
+        write!(pingstr, "{:03}ms", latency)?;
+    } else {
+        write!(pingstr, "{:03}s", latency / 1000)?;
+    }
+    Ok(Text::with_baseline(
+        &pingstr,
+        Point::new(
+            WIFI_LOGO_SIZE as i32 + 1,
+            (CLOCK_FONT.character_size.height - MAIN_FONT.character_size.height) as i32,
+        ),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?)
 }
 
 async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {

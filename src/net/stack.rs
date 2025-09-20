@@ -12,14 +12,17 @@ use crate::{
     io::led::{HEARTBEAT_NET_AWAIT, set_heartbeat},
 };
 
+// Available number of sockets for the network stack
+const SOCKETS: usize = 10;
+
 pub async fn init_net(
     driver: WifiDevice<'static>,
     seed: u64,
     spawner: &Spawner,
 ) -> Result<&'static mut Stack<'static>, SysError> {
     let resources = {
-        static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
-        RESOURCES.init(StackResources::<3>::new())
+        static RESOURCES: StaticCell<StackResources<SOCKETS>> = StaticCell::new();
+        RESOURCES.init(StackResources::<SOCKETS>::new())
     };
     let config = embassy_net::Config::dhcpv4(Default::default());
 

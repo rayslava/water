@@ -8,6 +8,7 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_net::dns::DnsQueryType;
 use embassy_net::tcp::TcpSocket;
@@ -16,12 +17,14 @@ use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
+use heapless::String;
 use water::appcore::start_appcore;
-use water::display::{display_task, update_status};
+use water::display::{STATUS_LEN, display_task, update_status};
 use water::io::gpio::led_init;
 use water::io::led::{HEARTBEAT_DEFAULT, heartbeat, set_heartbeat};
 use water::io::rtc;
 use water::io::wifi::wifi_hw_init;
+use water::net::mqtt::mqtt_task;
 use water::net::ntp::{NtpClient, ntp_task};
 use water::net::stack::{init_net, wait_for_ip, wait_for_link};
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -80,6 +83,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let ntp = NtpClient::new(stack);
     spawner.spawn(ntp_task(ntp)).ok();
+    spawner.spawn(mqtt_task(stack)).ok();
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
@@ -122,7 +126,16 @@ async fn main(spawner: Spawner) -> ! {
                     break;
                 }
             };
-            println!("{}", core::str::from_utf8(&buf[..n]).unwrap());
+            let line = core::str::from_utf8(&buf[..n]).unwrap();
+            let mut response: String<STATUS_LEN> = String::new();
+            write!(
+                response,
+                "{:<width$}",
+                core::str::from_utf8(&buf[..STATUS_LEN]).unwrap(),
+                width = STATUS_LEN
+            )
+            .ok();
+            update_status(&response).await.ok();
         }
         Timer::after(Duration::from_millis(20000)).await;
     }

@@ -5,7 +5,11 @@ use embassy_time::{Duration, Instant, Timer};
 use smoltcp::{storage::PacketMetadata, wire::DnsQueryType};
 use sntpc::{NtpContext, NtpTimestampGenerator, get_time};
 
-use crate::{display::update_status, error::SysError, io::rtc::set_time};
+use crate::{
+    display::update_status,
+    error::{NetError, SysError},
+    io::rtc::set_time,
+};
 
 const NTP_SERVER: &str = "pool.ntp.org";
 
@@ -32,7 +36,6 @@ impl<'a> NtpTimestampGenerator for Timestamp {
                 .try_into()
                 .unwrap(),
         );
-        log::info!("duration: {}ms", self.duration.as_millis());
     }
 
     fn timestamp_sec(&self) -> u64 {
@@ -77,13 +80,10 @@ impl<'a> NtpClient<'a> {
 
         socket.bind(123).unwrap();
 
-        let ntp_addrs = stack
-            .dns_query(NTP_SERVER, DnsQueryType::A)
-            .await
-            .expect("Failed to resolve DNS");
+        let ntp_addrs = stack.dns_query(NTP_SERVER, DnsQueryType::A).await?;
         if ntp_addrs.is_empty() {
-            log::error!("Failed to resolve DNS");
-        }
+            return Err(SysError::Net(NetError::Resolve));
+        };
         let addr: IpAddr = ntp_addrs[0].into();
         let result = get_time(SocketAddr::from((addr, 123)), &socket, self.context).await;
 
@@ -97,21 +97,8 @@ impl<'a> NtpClient<'a> {
 
                 Ok(set_time(datetime.timestamp_micros() as u64).await?)
             }
-            Err(e) => {
-                log::error!("Error getting time: {:?}", e);
-                Err(SysError::TimerSetup)
-            }
+            Err(_) => Err(SysError::TimerSetup),
         }
-    }
-
-    pub fn get_date_time(&self) -> DateTime<Utc> {
-        let mut context = self.context.clone();
-        context.timestamp_gen.init();
-        DateTime::from_timestamp(
-            context.timestamp_gen.timestamp_sec().try_into().unwrap(),
-            context.timestamp_gen.timestamp_subsec_micros() * 1000,
-        )
-        .unwrap()
     }
 }
 

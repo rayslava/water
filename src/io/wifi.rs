@@ -3,6 +3,8 @@ use crate::error::SysError;
 use crate::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, set_heartbeat};
 use core::fmt::Write;
 use embassy_executor::Spawner;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use esp_hal::{peripherals::WIFI, rng::Rng, timer::timg::Timer as HalTimer};
 use esp_println::println;
@@ -18,6 +20,7 @@ const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
 
 const RECONNECT_DELAY: Duration = Duration::from_millis(5000);
+static WIFI_CONNECTED: Mutex<CriticalSectionRawMutex, bool> = Mutex::new(false);
 
 pub async fn wifi_hw_init(
     timer: HalTimer<'static>,
@@ -38,6 +41,10 @@ pub async fn wifi_hw_init(
     Ok(interfaces.sta)
 }
 
+pub async fn is_wifi_connected() -> bool {
+    *WIFI_CONNECTED.lock().await
+}
+
 // We have to run this function in the background to keep the wifi on
 #[embassy_executor::task]
 async fn maintain_connection(mut controller: WifiController<'static>) {
@@ -47,6 +54,7 @@ async fn maintain_connection(mut controller: WifiController<'static>) {
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             update_status("WiFi disconnected").await.ok();
             set_heartbeat(HEARTBEAT_NET_AWAIT);
+            WIFI_CONNECTED.lock().await.clone_from(&false);
             Timer::after(RECONNECT_DELAY).await
         }
 
@@ -72,6 +80,7 @@ async fn maintain_connection(mut controller: WifiController<'static>) {
             Ok(_) => {
                 update_status("Wifi connected!").await.ok();
                 set_heartbeat(HEARTBEAT_DEFAULT);
+                WIFI_CONNECTED.lock().await.clone_from(&true);
             }
             Err(e) => {
                 set_heartbeat(HEARTBEAT_NET_AWAIT);

@@ -1,6 +1,7 @@
 use core::fmt::Write;
 use embedded_graphics::{
     Drawable,
+    image::{Image, ImageRaw},
     mono_font::{MonoFont, MonoTextStyleBuilder},
     pixelcolor::BinaryColor,
     prelude::*,
@@ -9,7 +10,7 @@ use embedded_graphics::{
 };
 use heapless::String;
 
-use crate::{error::UIError, power::charge_level, time::localtime};
+use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 
 use super::{DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
 
@@ -57,13 +58,25 @@ async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Resu
 
     let battery_level = (BATTERY_WIDTH - 2) * charge_level().await / 100;
 
-    Ok(Rectangle::new(
-        Point::new(BATTERY_X, 1),
-        Size::new(battery_level, BATTERY_HEIGHT),
-    )
-    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-    .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)?)
+    if battery_level > 1 {
+        Ok(Rectangle::new(
+            Point::new(BATTERY_X, 1),
+            Size::new(battery_level, BATTERY_HEIGHT),
+        )
+        .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+        .draw(&mut *target)
+        .map_err(|_| UIError::DrawError)?)
+    } else {
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&CLOCK_FONT)
+            .text_color(BinaryColor::On)
+            .build();
+
+        Text::with_baseline("*PWR*", Point::new(BATTERY_X, 1), text_style, Baseline::Top)
+            .draw(&mut *target)
+            .map_err(|_| UIError::DrawError)?;
+        Ok(())
+    }
 }
 
 async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<Point, UIError> {
@@ -87,7 +100,17 @@ async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result
     .map_err(|_| UIError::DrawError)?)
 }
 
-async fn draw_wifi(_target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+    const WIFI_IMAGE: ImageRaw<BinaryColor> =
+        ImageRaw::new(include_bytes!("../../icons/wifi.raw"), 16);
+    const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
+        ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), 16);
+    let image = if is_wifi_connected().await {
+        Image::new(&WIFI_IMAGE, Point::zero())
+    } else {
+        Image::new(&NOWIFI_IMAGE, Point::zero())
+    };
+    image.draw(&mut *target).map_err(|_| UIError::DrawError)?;
     Ok(())
 }
 

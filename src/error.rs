@@ -40,10 +40,17 @@ pub enum UIError {
 }
 
 #[derive(Debug, Error)]
+pub enum NetError {
+    Dns(#[from] embassy_net::dns::Error),
+    Resolve,
+}
+
+#[derive(Debug, Error)]
 pub enum SysError {
     Spawn(#[from] SpawnError),
     Hardware(#[from] HwError),
     System(#[from] SystemError),
+    Net(#[from] NetError),
     Time(#[from] jiff::Error),
     TimerSetup,
     NoTime,
@@ -71,4 +78,5 @@ transitive_from!(
     UIError: GpioError => Hardware,
     SysError: InitializationError => Hardware,
     SysError: WifiError => Hardware,
+    SysError: embassy_net::dns::Error => Net,
 );

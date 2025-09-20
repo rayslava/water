@@ -9,7 +9,7 @@ use embedded_graphics::{
 };
 use heapless::String;
 
-use crate::{error::UIError, time::localtime};
+use crate::{error::UIError, power::charge_level, time::localtime};
 
 use super::{DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
 
@@ -44,12 +44,22 @@ async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Resu
     .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
     .draw(&mut *target)
     .map_err(|_| UIError::DrawError)?;
-    Ok(Rectangle::new(
+    Rectangle::new(
         Point::new(
             BATTERY_X + BATTERY_WIDTH as i32 - 2,
             BATTERY_HEIGHT as i32 / 4 + 2,
         ),
         Size::new(3, BATTERY_HEIGHT / 2),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?;
+
+    let battery_level = (BATTERY_WIDTH - 2) * charge_level().await / 100;
+
+    Ok(Rectangle::new(
+        Point::new(BATTERY_X, 1),
+        Size::new(battery_level, BATTERY_HEIGHT),
     )
     .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
     .draw(&mut *target)

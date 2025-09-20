@@ -5,7 +5,7 @@ use embassy_time::{Duration, Instant, Timer};
 use smoltcp::{storage::PacketMetadata, wire::DnsQueryType};
 use sntpc::{NtpContext, NtpTimestampGenerator, get_time};
 
-use crate::{error::SysError, io::rtc::set_time};
+use crate::{display::update_status, error::SysError, io::rtc::set_time};
 
 const NTP_SERVER: &str = "pool.ntp.org";
 
@@ -59,7 +59,7 @@ impl<'a> NtpClient<'a> {
         }
     }
 
-    pub async fn sync(self) -> Result<(), SysError> {
+    pub async fn sync(&self) -> Result<(), SysError> {
         let stack = self.stack;
 
         let mut udp_rx_meta = [PacketMetadata::EMPTY; 16];
@@ -118,10 +118,14 @@ impl<'a> NtpClient<'a> {
 const NTP_REFRESH_TIME: Duration = Duration::from_secs(3600);
 
 #[embassy_executor::task]
-pub async fn ntp_task(stack: &'static Stack<'static>) {
+pub async fn ntp_task(client: NtpClient<'static>) {
     loop {
-        let client = NtpClient::new(stack);
-        client.sync().await.ok();
+        update_status("Syncing NTP").await.ok();
+        if let Ok(()) = client.sync().await {
+            update_status("Time synced").await.ok();
+        } else {
+            update_status("NTP failed, proceeding").await.ok();
+        };
         Timer::after(NTP_REFRESH_TIME).await;
     }
 }

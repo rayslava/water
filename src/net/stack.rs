@@ -16,7 +16,7 @@ pub async fn init_net(
     driver: WifiDevice<'static>,
     seed: u64,
     spawner: &Spawner,
-) -> Result<Stack<'static>, SysError> {
+) -> Result<&'static mut Stack<'static>, SysError> {
     let resources = {
         static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
         RESOURCES.init(StackResources::<3>::new())
@@ -25,6 +25,10 @@ pub async fn init_net(
 
     let (stack, runner) = embassy_net::new(driver, config, resources, seed);
     spawner.spawn(net_task(runner))?;
+    let stack = {
+        static RESOURCES: StaticCell<Stack<'static>> = StaticCell::new();
+        RESOURCES.init(stack)
+    };
     Ok(stack)
 }
 
@@ -36,7 +40,7 @@ async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
 
 const NET_REFRESH_TIME: Duration = Duration::from_millis(500);
 
-pub async fn wait_for_link(stack: Stack<'static>) {
+pub async fn wait_for_link(stack: &Stack<'static>) {
     set_heartbeat(HEARTBEAT_NET_AWAIT);
     update_status("Waiting for net").await.ok();
     loop {
@@ -47,7 +51,7 @@ pub async fn wait_for_link(stack: Stack<'static>) {
     }
 }
 
-pub async fn wait_for_ip(stack: Stack<'static>) -> Ipv4Cidr {
+pub async fn wait_for_ip(stack: &Stack<'static>) -> Ipv4Cidr {
     set_heartbeat(HEARTBEAT_NET_AWAIT);
     update_status("Waiting for IP").await.ok();
     loop {

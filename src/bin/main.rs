@@ -22,7 +22,7 @@ use water::io::gpio::led_init;
 use water::io::led::{HEARTBEAT_DEFAULT, heartbeat, set_heartbeat};
 use water::io::rtc;
 use water::io::wifi::wifi_hw_init;
-use water::net::ntp::NtpClient;
+use water::net::ntp::{NtpClient, ntp_task};
 use water::net::stack::{init_net, wait_for_ip, wait_for_link};
 esp_bootloader_esp_idf::esp_app_desc!();
 
@@ -78,15 +78,15 @@ async fn main(spawner: Spawner) -> ! {
     wait_for_ip(stack).await;
     set_heartbeat(HEARTBEAT_DEFAULT);
 
-    let ntp = NtpClient::new(&stack);
-    ntp.sync().await.ok();
+    let ntp = NtpClient::new(stack);
+    spawner.spawn(ntp_task(ntp)).ok();
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
     loop {
         Timer::after(Duration::from_millis(1_000)).await;
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
 
         socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 

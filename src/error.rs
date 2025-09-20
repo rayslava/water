@@ -46,6 +46,7 @@ pub enum SysError {
     System(#[from] SystemError),
     Time(#[from] jiff::Error),
     TimerSetup,
+    NoTime,
 }
 
 // Generate transitive From implementations

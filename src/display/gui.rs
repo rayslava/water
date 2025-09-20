@@ -12,7 +12,9 @@ use heapless::String;
 
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 
-use super::{DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
+use super::{
+    DISPLAY_HEIGHT, DISPLAY_WIDTH, STATUS_BAR_HEIGHT, STATUS_LINE_HEIGHT, STATUS_LINE_TOP,
+};
 
 pub(crate) async fn draw_markup(
     target: &mut impl DrawTarget<Color = BinaryColor>,
@@ -72,9 +74,14 @@ async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Resu
             .text_color(BinaryColor::On)
             .build();
 
-        Text::with_baseline("*PWR*", Point::new(BATTERY_X, 1), text_style, Baseline::Top)
-            .draw(&mut *target)
-            .map_err(|_| UIError::DrawError)?;
+        Text::with_baseline(
+            "LOW",
+            Point::new(BATTERY_X + 1, 1),
+            text_style,
+            Baseline::Top,
+        )
+        .draw(&mut *target)
+        .map_err(|_| UIError::DrawError)?;
         Ok(())
     }
 }
@@ -118,6 +125,19 @@ async fn draw_net(_target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     Ok(())
 }
 
+async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+    Ok(Rectangle::new(
+        Point::new(0, STATUS_BAR_HEIGHT),
+        Size::new(
+            DISPLAY_WIDTH as u32,
+            (DISPLAY_HEIGHT - STATUS_BAR_HEIGHT - STATUS_LINE_HEIGHT) as u32,
+        ),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?)
+}
+
 pub(crate) async fn draw_status_bar(
     target: &mut impl DrawTarget<Color = BinaryColor>,
 ) -> Result<(), UIError> {
@@ -125,5 +145,6 @@ pub(crate) async fn draw_status_bar(
     draw_wifi(target).await?;
     draw_clock(target).await?;
     draw_battery(target).await?;
+    draw_main(target).await?;
     Ok(())
 }

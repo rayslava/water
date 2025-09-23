@@ -50,7 +50,7 @@ impl DisplayHandle {
     async fn markup(&self) -> Result<(), UIError> {
         let mut display = self.display_mutex.lock().await;
         gui::draw_status_bar(&mut *display).await?;
-        Ok(gui::draw_markup(&mut *display).await?)
+        gui::draw_markup(&mut *display).await
     }
 
     async fn print_status(&self) -> Result<(), UIError> {
@@ -71,7 +71,7 @@ impl DisplayHandle {
 
         Text::with_baseline(
             status_str,
-            Point::new(0, DISPLAY_HEIGHT - FONT_HEIGHT as i32),
+            Point::new(0, DISPLAY_HEIGHT - FONT_HEIGHT),
             text_style,
             Baseline::Top,
         )

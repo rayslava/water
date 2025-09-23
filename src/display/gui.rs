@@ -21,13 +21,13 @@ pub(crate) async fn draw_markup(
     target: &mut impl DrawTarget<Color = BinaryColor>,
 ) -> Result<(), UIError> {
     // The status bar separation
-    Ok(Line::new(
+    Line::new(
         Point::new(0, STATUS_LINE_TOP),
         Point::new(DISPLAY_WIDTH, STATUS_LINE_TOP),
     )
     .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
     .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)?)
+    .map_err(|_| UIError::DrawError)
 }
 
 const WIFI_LOGO_SIZE: u32 = 16;
@@ -106,14 +106,14 @@ async fn draw_clock(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result
     } else {
         write!(timestring, "--:--").ok();
     }
-    Ok(Text::with_baseline(
+    Text::with_baseline(
         &timestring,
         Point::new(DISPLAY_WIDTH - TIME_WIDTH, 1),
         text_style,
         Baseline::Top,
     )
     .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)?)
+    .map_err(|_| UIError::DrawError)
 }
 
 async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
@@ -157,7 +157,7 @@ async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<P
 }
 
 async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
-    Ok(Rectangle::new(
+    Rectangle::new(
         Point::new(0, STATUS_BAR_HEIGHT),
         Size::new(
             DISPLAY_WIDTH as u32,
@@ -166,7 +166,7 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     )
     .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
     .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)?)
+    .map_err(|_| UIError::DrawError)
 }
 
 pub(crate) async fn draw_status_bar(

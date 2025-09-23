@@ -10,7 +10,7 @@ static GLOBAL_RTC: Mutex<CriticalSectionRawMutex, Option<Rtc>> = Mutex::new(None
 pub async fn get_time() -> Result<u64, SysError> {
     let rtc = GLOBAL_RTC.lock().await;
     if let Some(rtc) = rtc.as_ref() {
-        return Ok(rtc.current_time_us() as u64);
+        Ok(rtc.current_time_us())
     } else {
         Err(SysError::TimerSetup)
     }
@@ -19,7 +19,8 @@ pub async fn get_time() -> Result<u64, SysError> {
 pub async fn set_time(stamp: u64) -> Result<(), SysError> {
     let rtc = GLOBAL_RTC.lock().await;
     if let Some(rtc) = rtc.as_ref() {
-        Ok(rtc.set_current_time_us(stamp))
+        let _: () = rtc.set_current_time_us(stamp);
+        Ok(())
     } else {
         Err(SysError::TimerSetup)
     }

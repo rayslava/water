@@ -28,7 +28,7 @@ impl Timestamp {
     }
 }
 
-impl<'a> NtpTimestampGenerator for Timestamp {
+impl NtpTimestampGenerator for Timestamp {
     fn init(&mut self) {
         self.duration = Duration::from_micros(
             (self.offset + TimeDelta::milliseconds(Instant::now().as_millis().try_into().unwrap()))
@@ -43,7 +43,7 @@ impl<'a> NtpTimestampGenerator for Timestamp {
     }
 
     fn timestamp_subsec_micros(&self) -> u32 {
-        (self.duration.as_micros() - self.duration.as_secs() * 1000000)
+        (self.duration.as_micros() - self.duration.as_secs() * 1_000_000)
             .try_into()
             .unwrap()
     }
@@ -107,14 +107,14 @@ const NTP_REFRESH_TIME: Duration = Duration::from_secs(3600);
 #[embassy_executor::task]
 pub async fn ntp_task(client: NtpClient<'static>) {
     loop {
-	let timeout;
+        let timeout;
         update_status("Syncing NTP").await.ok();
         if let Ok(()) = client.sync().await {
             update_status("Time synced").await.ok();
-	    timeout = NTP_REFRESH_TIME;
+            timeout = NTP_REFRESH_TIME;
         } else {
             update_status("NTP failed, proceeding").await.ok();
-	    timeout = Duration::from_secs(5);
+            timeout = Duration::from_secs(5);
         };
         Timer::after(timeout).await;
     }

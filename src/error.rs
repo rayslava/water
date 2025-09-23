@@ -45,6 +45,9 @@ pub enum NetError {
     Dns(#[from] embassy_net::dns::Error),
     Resolve,
     Ping,
+    Tcp(#[from] embassy_net::tcp::Error),
+    TcpConnect(#[from] embassy_net::tcp::ConnectError),
+    Mqtt,
 }
 
 #[derive(Debug, Error)]
@@ -82,4 +85,5 @@ transitive_from!(
     SysError: InitializationError => Hardware,
     SysError: WifiError => Hardware,
     SysError: embassy_net::dns::Error => Net,
+    SysError: embassy_net::tcp::ConnectError => Net,
 );

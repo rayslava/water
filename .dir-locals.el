@@ -9,6 +9,8 @@
 			       "source ~/export-esp.sh; env | egrep '^PATH='")
 		 (insert "\nSSID=testssid\n")
 		 (insert "PASSWORD=testpassword\n")
+		 (insert "MQTT_USER=user\n")
+		 (insert "MQTT_PASSWORD=password\n")
 		 (goto-char (point-min))
 		 (while (not (eobp))
 		   (setq process-environment

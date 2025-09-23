@@ -83,7 +83,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let ntp = NtpClient::new(stack);
     spawner.spawn(ntp_task(ntp)).ok();
-    spawner.spawn(mqtt_task(stack)).ok();
+    spawner.spawn(mqtt_task(rng, stack)).ok();
 
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
@@ -134,7 +134,7 @@ async fn main(spawner: Spawner) -> ! {
                 width = STATUS_LEN
             )
             .ok();
-            update_status(&response).await.ok();
+            //            update_status(&response).await.ok();
         }
         Timer::after(Duration::from_millis(20000)).await;
     }

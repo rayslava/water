@@ -7,6 +7,7 @@ use embassy_net::{IpEndpoint, Stack};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Duration;
+use embassy_time::Timer;
 use esp_hal::rng::Rng;
 use heapless::String;
 use rust_mqtt::client::client::MqttClient;
@@ -57,6 +58,7 @@ pub async fn latency() -> Result<u64, NetError> {
 }
 
 const MQTT_REFRESH_TIME: Duration = Duration::from_secs(120);
+const MQTT_ERR_REFRESH_TIME: Duration = Duration::from_secs(20);
 const MQTT_SERVER: &str = "raspberrypi.jp.home.rayslava.com";
 const MQTT_USER: &str = env!("MQTT_USER");
 const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
@@ -136,10 +138,12 @@ pub async fn mqtt_task(rng: Rng, stack: &'static Stack<'static>) {
     config.add_password(MQTT_PASSWORD);
 
     loop {
-        update_mqtt(&config, stack)
-            .await
-            .map_err(async move |_| update_status("MQTT error").await.unwrap())
-            .ok();
+        if let Err(e) = update_mqtt(&config, stack).await {
+            let mut status: String<STATUS_LEN> = String::new();
+            write!(status, "MQTT err: {:?}", e).ok();
+            update_status(&status).await.ok();
+            Timer::after(MQTT_ERR_REFRESH_TIME).await;
+        };
 
         *LATENCY.lock().await = measure_latency(stack)
             .await

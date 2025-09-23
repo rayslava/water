@@ -57,8 +57,8 @@ pub async fn latency() -> Result<u64, NetError> {
     }
 }
 
-const MQTT_REFRESH_TIME: Duration = Duration::from_secs(120);
-const MQTT_ERR_REFRESH_TIME: Duration = Duration::from_secs(20);
+const MQTT_REFRESH_TIME: Duration = Duration::from_secs(10);
+const MQTT_ERR_REFRESH_TIME: Duration = Duration::from_secs(5);
 const MQTT_SERVER: &str = "raspberrypi.jp.home.rayslava.com";
 const MQTT_USER: &str = env!("MQTT_USER");
 const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
@@ -67,50 +67,71 @@ const MQTT_CLIENT_ID: &str = "water_machine";
 const MQTT_TOPIC: &str = "water/status";
 
 async fn update_mqtt(
-    config: &ClientConfig<'_, 10, Rng>,
+    config: ClientConfig<'_, 10, Rng>,
     stack: &'static Stack<'static>,
 ) -> Result<(), SysError> {
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
     let count = 42usize;
+    let mut status: String<STATUS_LEN> = String::new();
 
     let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
     socket.set_timeout(Some(MQTT_REFRESH_TIME));
 
-    let address = stack.dns_query(MQTT_SERVER, DnsQueryType::A).await?;
+    let address = match stack.dns_query(MQTT_SERVER, DnsQueryType::A).await {
+        Ok(addr) => addr,
+        Err(e) => {
+            write!(status, "MQTT DNS: {:?}", e).ok();
+            update_status(&status).await.ok();
+            return Err(SysError::Net(NetError::Resolve));
+        }
+    };
+
     let remote_endpoint: IpEndpoint = (address[0], MQTT_PORT).into();
-    socket.connect(remote_endpoint).await?;
+    if let Err(e) = socket.connect(remote_endpoint).await {
+        write!(status, "MQTT Sock: {:?}", e).ok();
+        update_status(&status).await.ok();
+        return Err(SysError::Net(NetError::Socket));
+    }
 
     let mut recv_buffer = [0; 80];
     let mut write_buffer = [0; 80];
 
-    let mut client = MqttClient::new(
-        socket,
-        &mut write_buffer,
-        80,
-        &mut recv_buffer,
-        80,
-        config.clone(),
-    );
+    let mut client = MqttClient::new(socket, &mut write_buffer, 80, &mut recv_buffer, 80, config);
 
-    client
-        .connect_to_broker()
-        .await
-        .map_err(|_| NetError::Mqtt)?;
+    if let Err(e) = client.connect_to_broker().await {
+        write!(status, "MQTT Conn: {:?}", e).ok();
+        update_status(&status).await.ok();
+        return Err(SysError::Net(NetError::Mqtt));
+    }
+
+    if let Err(e) = client.send_ping().await {
+        write!(status, "MQTT Ping: {:?}", e).ok();
+        update_status(&status).await.ok();
+        return Err(SysError::Net(NetError::Mqtt));
+    }
 
     let mut msg: String<32> = String::new();
     write!(msg, "{:.2}", count).map_err(|_| NetError::Mqtt)?;
-    client
+
+    if let Err(e) = client
         .send_message(MQTT_TOPIC, msg.as_bytes(), QualityOfService::QoS1, true)
         .await
-        .map_err(|_| NetError::Mqtt)?;
+    {
+        write!(status, "MQTT Pub: {:?}", e).ok();
+        update_status(&status).await.ok();
+        return Err(SysError::Net(NetError::Mqtt));
+    }
 
-    client
-        .subscribe_to_topic("water/control")
-        .await
-        .map_err(|_| NetError::Mqtt)?;
+    if let Err(e) = client.subscribe_to_topic("water/control").await {
+        write!(status, "MQTT Sub: {:?}", e).ok();
+        update_status(&status).await.ok();
+        return Err(SysError::Net(NetError::Mqtt));
+    }
 
+    write!(status, "MQTT wait...").ok();
+    update_status(&status).await.ok();
     match client.receive_message().await {
         Ok((_topic, payload)) => {
             let mut response: String<STATUS_LEN> = String::new();
@@ -124,7 +145,11 @@ async fn update_mqtt(
             update_status(&response).await.map_err(|_| NetError::Mqtt)?;
             Ok(())
         }
-        _ => Err(SysError::Net(NetError::Mqtt)),
+        Err(e) => {
+            write!(status, "MQTT Recv: {:?}", e).ok();
+            update_status(&status).await.ok();
+            Err(SysError::Net(NetError::Mqtt))
+        }
     }
 }
 
@@ -133,20 +158,17 @@ pub async fn mqtt_task(rng: Rng, stack: &'static Stack<'static>) {
     let mut config = ClientConfig::new(rust_mqtt::client::client_config::MqttVersion::MQTTv5, rng);
     config.add_max_subscribe_qos(QualityOfService::QoS1);
     config.add_client_id(MQTT_CLIENT_ID);
-    config.max_packet_size = 100;
+    config.max_packet_size = 128;
     config.add_username(MQTT_USER);
     config.add_password(MQTT_PASSWORD);
 
     loop {
-        if let Err(e) = update_mqtt(&config, stack).await {
-            let mut status: String<STATUS_LEN> = String::new();
-            write!(status, "MQTT err: {:?}", e).ok();
-            update_status(&status).await.ok();
-            Timer::after(MQTT_ERR_REFRESH_TIME).await;
-        };
-
         *LATENCY.lock().await = measure_latency(stack)
             .await
             .unwrap_or(Duration::from_secs(0));
+
+        if update_mqtt(config.clone(), stack).await.is_err() {
+            Timer::after(MQTT_ERR_REFRESH_TIME).await;
+        };
     }
 }

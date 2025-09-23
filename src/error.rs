@@ -48,6 +48,7 @@ pub enum NetError {
     Tcp(#[from] embassy_net::tcp::Error),
     TcpConnect(#[from] embassy_net::tcp::ConnectError),
     Mqtt,
+    Socket,
 }
 
 #[derive(Debug, Error)]

@@ -82,6 +82,9 @@ embedded-graphics = "0.8"
 # Error handling dependencies
 thiserror-no-std = { version = "2", default-features = false }
 display-interface = "0"
+
+ciborium = {version = "0.2.2", default-features = false }
+
 [profile.dev]
 opt-level = "s"
 

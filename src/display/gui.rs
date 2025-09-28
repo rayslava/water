@@ -1,4 +1,6 @@
 use crate::net::mqtt::latency;
+use crate::power::water_level;
+use crate::watering::get_low_water_limit;
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;
 use embedded_graphics::{
@@ -12,10 +14,7 @@ use embedded_graphics::{
 };
 use heapless::String;
 
-use super::{
-    DISPLAY_HEIGHT, DISPLAY_WIDTH, MAIN_FONT, STATUS_BAR_HEIGHT, STATUS_LINE_HEIGHT,
-    STATUS_LINE_TOP,
-};
+use super::{DISPLAY_WIDTH, MAIN_FONT, STATUS_BAR_HEIGHT, STATUS_LINE_TOP};
 
 pub(crate) async fn draw_markup(
     target: &mut impl DrawTarget<Color = BinaryColor>,
@@ -37,6 +36,9 @@ const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), WIFI_LOGO_SIZE);
 const NONET_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/nonet.raw"), WIFI_LOGO_SIZE);
+const BIG_ICON_SIZE: u32 = 32;
+const DROP_IMAGE: ImageRaw<BinaryColor> =
+    ImageRaw::new(include_bytes!("../../icons/drop.raw"), BIG_ICON_SIZE);
 
 const CLOCK_FONT: MonoFont<'_> = embedded_graphics::mono_font::ascii::FONT_9X15;
 const CLOCK_FONT_WIDTH: i32 = CLOCK_FONT.character_size.width as i32;
@@ -47,6 +49,8 @@ const TIME_WIDTH: i32 = CLOCK_FONT_WIDTH * 5; // HH:MM
 const BATTERY_WIDTH: u32 = 32;
 const BATTERY_X: i32 = DISPLAY_WIDTH - TIME_WIDTH - BATTERY_WIDTH as i32 - 3;
 const BATTERY_HEIGHT: u32 = STATUS_BAR_HEIGHT as u32 - 1;
+
+const MAIN_WINDOW_TOP: u32 = STATUS_BAR_HEIGHT as u32;
 
 async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
     Rectangle::new(
@@ -157,16 +161,40 @@ async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<P
 }
 
 async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
-    Rectangle::new(
-        Point::new(0, STATUS_BAR_HEIGHT),
-        Size::new(
-            DISPLAY_WIDTH as u32,
-            (DISPLAY_HEIGHT - STATUS_BAR_HEIGHT - STATUS_LINE_HEIGHT) as u32,
-        ),
+    let image = Image::new(&DROP_IMAGE, Point::new(0, MAIN_WINDOW_TOP as i32));
+    image.draw(&mut *target).map_err(|_| UIError::DrawError)?;
+
+    let mut waterstr: String<10> = String::new(); // 000%
+    write!(waterstr, "~{:3}%", water_level().await)?;
+    let mut waterlimstr: String<10> = String::new(); // 000%
+    write!(waterlimstr, ">{:3}%", get_low_water_limit().await)?;
+
+    let text_style = MonoTextStyleBuilder::new()
+        .font(&CLOCK_FONT)
+        .text_color(BinaryColor::On)
+        .build();
+
+    Text::with_baseline(
+        &waterstr,
+        Point::new(BIG_ICON_SIZE as i32 + 1, MAIN_WINDOW_TOP as i32 + 1),
+        text_style,
+        Baseline::Top,
     )
-    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
     .draw(&mut *target)
-    .map_err(|_| UIError::DrawError)
+    .map_err(|_| UIError::DrawError)?;
+    Text::with_baseline(
+        &waterlimstr,
+        Point::new(
+            BIG_ICON_SIZE as i32 + 1,
+            MAIN_WINDOW_TOP as i32 + 1 + CLOCK_FONT.character_size.height as i32,
+        ),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?;
+
+    Ok(())
 }
 
 pub(crate) async fn draw_status_bar(

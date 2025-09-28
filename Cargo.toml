@@ -85,6 +85,8 @@ display-interface = "0"
 
 ciborium = {version = "0.2.2", default-features = false }
 
+nb = "1"
+
 [profile.dev]
 opt-level = "s"
 

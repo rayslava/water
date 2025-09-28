@@ -20,7 +20,9 @@ use esp_println::println;
 use heapless::String;
 use water::appcore::start_appcore;
 use water::display::{STATUS_LEN, display_task, update_status};
-use water::io::gpio::led_init;
+use water::io::gpio::{
+    adc_task, btn_init, compressor_init, get_battery_value, get_sensor_value, led_init,
+};
 use water::io::led::{HEARTBEAT_DEFAULT, heartbeat, set_heartbeat};
 use water::io::rtc;
 use water::io::wifi::wifi_hw_init;
@@ -46,6 +48,8 @@ async fn main(spawner: Spawner) -> ! {
     esp_hal_embassy::init(embassy_timer);
 
     let led = led_init(peripherals.GPIO2).await;
+    let mut compressor = compressor_init(peripherals.GPIO25).await;
+    let button = btn_init(peripherals.GPIO0).await;
 
     rtc::init(peripherals.LPWR).await;
 
@@ -60,6 +64,13 @@ async fn main(spawner: Spawner) -> ! {
                     peripherals.I2C0,
                     peripherals.GPIO21,
                     peripherals.GPIO22,
+                ))
+                .ok();
+            spawner
+                .spawn(adc_task(
+                    peripherals.GPIO36,
+                    peripherals.GPIO34,
+                    peripherals.ADC1,
                 ))
                 .ok();
         }
@@ -89,53 +100,64 @@ async fn main(spawner: Spawner) -> ! {
     let mut tx_buffer = [0; 4096];
 
     loop {
-        Timer::after(Duration::from_millis(1_000)).await;
-        let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
+        // Timer::after(Duration::from_millis(1_000)).await;
+        // let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
 
-        socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
+        // socket.set_timeout(Some(embassy_time::Duration::from_secs(10)));
 
-        let url = "www.mobile-j.de";
+        // let url = "www.mobile-j.de";
 
-        let remote_address = stack.dns_query(url, DnsQueryType::A).await.unwrap();
-        let remote_endpoint = (remote_address[0], 80);
-        println!("connecting...");
-        let r = socket.connect(remote_endpoint).await;
-        if let Err(e) = r {
-            println!("connect error: {:?}", e);
-            continue;
-        }
-        println!("connected!");
-        let mut buf = [0; 1024];
+        // let remote_address = stack.dns_query(url, DnsQueryType::A).await.unwrap();
+        // let remote_endpoint = (remote_address[0], 80);
+        // println!("connecting...");
+        // let r = socket.connect(remote_endpoint).await;
+        // if let Err(e) = r {
+        //     println!("connect error: {:?}", e);
+        //     continue;
+        // }
+        // println!("connected!");
+        // let mut buf = [0; 1024];
         loop {
-            use embedded_io_async::Write;
-            let r = socket
-                .write_all(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
-                .await;
-            if let Err(e) = r {
-                println!("write error: {:?}", e);
-                break;
+            // use embedded_io_async::Write;
+            // let r = socket
+            //     .write_all(b"GET / HTTP/1.0\r\nHost: www.mobile-j.de\r\n\r\n")
+            //     .await;
+            // if let Err(e) = r {
+            //     println!("write error: {:?}", e);
+            //     break;
+            // }
+            // match socket.read(&mut buf).await {
+            //     Ok(0) => {
+            //         println!("read EOF");
+            //         break;
+            //     }
+            //     Ok(n) => n,
+            //     Err(e) => {
+            //         println!("read error: {:?}", e);
+            //         break;
+            //     }
+            // };
+            // let mut response: String<STATUS_LEN> = String::new();
+            // write!(
+            //     response,
+            //     "{:<width$}",
+            //     core::str::from_utf8(&buf[..STATUS_LEN]).unwrap(),
+            //     width = STATUS_LEN
+            // )
+            // .ok();
+            // update_status(&response).await.ok();
+            let sens_val = get_sensor_value().await;
+            let bat_val = get_battery_value().await;
+            println!("Sensor: {}, Battery: {}", sens_val, bat_val);
+
+            if button.is_low() {
+                println!("Compressor ON");
+                compressor.set_high();
+            } else {
+                compressor.set_low();
             }
-            match socket.read(&mut buf).await {
-                Ok(0) => {
-                    println!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    println!("read error: {:?}", e);
-                    break;
-                }
-            };
-            let mut response: String<STATUS_LEN> = String::new();
-            write!(
-                response,
-                "{:<width$}",
-                core::str::from_utf8(&buf[..STATUS_LEN]).unwrap(),
-                width = STATUS_LEN
-            )
-            .ok();
-            //            update_status(&response).await.ok();
+            Timer::after(Duration::from_millis(2000)).await;
         }
-        Timer::after(Duration::from_millis(20000)).await;
+        //        Timer::after(Duration::from_millis(20000)).await;
     }
 }

@@ -22,7 +22,7 @@ pub enum GpioError {
 pub enum ConversionError {
     Utf(#[from] Utf8Error),
     Format(#[from] core::fmt::Error),
-    CBOR(#[from] ciborium::ser::Error),
+    CBOR,
 }
 
 #[derive(Debug, Error)]

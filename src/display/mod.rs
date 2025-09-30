@@ -29,7 +29,6 @@ const FONT_WIDTH: i32 = MAIN_FONT.character_size.width as i32;
 
 const STATUS_BAR_HEIGHT: i32 = 16;
 
-const STATUS_LINE_HEIGHT: i32 = FONT_HEIGHT;
 const STATUS_LINE_TOP: i32 = DISPLAY_HEIGHT - FONT_HEIGHT - 1;
 
 pub const STATUS_LEN: usize = DISPLAY_WIDTH as usize / FONT_WIDTH as usize;

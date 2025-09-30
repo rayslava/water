@@ -14,6 +14,7 @@ use rust_mqtt::client::client::MqttClient;
 use rust_mqtt::client::client_config::ClientConfig;
 use rust_mqtt::packet::v5::publish_packet::QualityOfService;
 
+use crate::command::Command;
 use crate::display::STATUS_LEN;
 use crate::display::update_status;
 use crate::error::{NetError, SysError};
@@ -134,15 +135,14 @@ async fn update_mqtt(
     update_status(&status).await.ok();
     match client.receive_message().await {
         Ok((_topic, payload)) => {
-            let mut response: String<STATUS_LEN> = String::new();
-            let width = STATUS_LEN.min(payload.len());
-            write!(
-                response,
-                "MQTT: {:<width$}",
-                core::str::from_utf8(&payload[..width]).unwrap(),
-            )
-            .map_err(|_| NetError::Mqtt)?;
-            update_status(&response).await.map_err(|_| NetError::Mqtt)?;
+            let command: Result<(Command, _), _> = serde_json_core::from_slice(payload);
+            if let Ok((cmd, _)) = command {
+                cmd.process().await;
+            } else {
+                update_status("MQTT: cmd err")
+                    .await
+                    .map_err(|_| NetError::Mqtt)?;
+            }
             Ok(())
         }
         Err(e) => {

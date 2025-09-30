@@ -41,7 +41,7 @@ embedded-io-async = "0.6"
 rust-mqtt = { version = "0.3", default-features = false }
 
 esp-alloc = "0.8"
-heapless = "0.8"
+heapless = { version = "0.8", features = ["serde"] }
 esp-backtrace = { version = "0.17", features = [
   "exception-handler",
   "panic-handler",
@@ -83,7 +83,8 @@ embedded-graphics = "0.8"
 thiserror-no-std = { version = "2", default-features = false }
 display-interface = "0"
 
-ciborium = {version = "0.2.2", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde-json-core = { version = "0", features = ["heapless"] }
 
 nb = "1"
 

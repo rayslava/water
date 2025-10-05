@@ -1,6 +1,6 @@
 use crate::net::mqtt::latency;
 use crate::power::water_level;
-use crate::watering::get_low_water_limit;
+use crate::watering::get_low_humidity_limit;
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;
 use embedded_graphics::{
@@ -167,7 +167,7 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     let mut waterstr: String<10> = String::new(); // 000%
     write!(waterstr, "~{:3}%", water_level().await)?;
     let mut waterlimstr: String<10> = String::new(); // 000%
-    write!(waterlimstr, ">{:3}%", get_low_water_limit().await)?;
+    write!(waterlimstr, ">{:3}%", get_low_humidity_limit().await)?;
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&CLOCK_FONT)

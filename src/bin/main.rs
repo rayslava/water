@@ -19,6 +19,7 @@ use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
 use esp_println::println;
 use heapless::String;
 use water::appcore::start_appcore;
+use water::command::Command;
 use water::display::{STATUS_LEN, display_task, update_status};
 use water::io::gpio::{
     adc_task, btn_init, compressor_init, get_battery_value, get_sensor_value, led_init,

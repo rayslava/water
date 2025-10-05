@@ -113,8 +113,7 @@ async fn update_mqtt(
         return Err(SysError::Net(NetError::Mqtt));
     }
 
-    let mut msg: String<32> = String::new();
-    write!(msg, "{:.2}", count).map_err(|_| NetError::Mqtt)?;
+    let msg: String<256> = serde_json_core::to_string(&Command::SetMqttTimeout(32)).unwrap();
 
     if let Err(e) = client
         .send_message(MQTT_TOPIC, msg.as_bytes(), QualityOfService::QoS1, true)

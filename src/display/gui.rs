@@ -1,5 +1,7 @@
-use crate::net::mqtt::latency;
+use crate::error::ConversionError;
+use crate::net::mqtt::{latency, mqtt_status};
 use crate::power::humidity_level;
+use crate::time::{get_next_watering, get_next_watering_time};
 use crate::watering::get_low_humidity_limit;
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;
@@ -36,6 +38,8 @@ const NOWIFI_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/nowifi.raw"), WIFI_LOGO_SIZE);
 const NONET_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/nonet.raw"), WIFI_LOGO_SIZE);
+const MQTT_IMAGE: ImageRaw<BinaryColor> =
+    ImageRaw::new(include_bytes!("../../icons/mqtt.raw"), WIFI_LOGO_SIZE);
 const BIG_ICON_SIZE: u32 = 32;
 const DROP_IMAGE: ImageRaw<BinaryColor> =
     ImageRaw::new(include_bytes!("../../icons/drop.raw"), BIG_ICON_SIZE);
@@ -51,6 +55,7 @@ const BATTERY_X: i32 = DISPLAY_WIDTH - TIME_WIDTH - BATTERY_WIDTH as i32 - 3;
 const BATTERY_HEIGHT: u32 = STATUS_BAR_HEIGHT as u32 - 1;
 
 const MAIN_WINDOW_TOP: u32 = STATUS_BAR_HEIGHT as u32;
+const MQTT_STATUS_LEFT: i32 = BIG_ICON_SIZE as i32 + MAIN_FONT.character_size.width as i32 * 8;
 
 async fn draw_battery(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
     Rectangle::new(
@@ -130,6 +135,39 @@ async fn draw_wifi(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     Ok(())
 }
 
+async fn draw_mqtt(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<(), UIError> {
+    let image = Image::new(
+        &MQTT_IMAGE,
+        Point::new(
+            // right of humidity
+            MQTT_STATUS_LEFT,
+            MAIN_WINDOW_TOP as i32,
+        ),
+    );
+    image.draw(&mut *target).map_err(|_| UIError::DrawError)?;
+
+    let status = mqtt_status().await.map_err(|_| ConversionError::RawBuf)?;
+
+    let text_style = MonoTextStyleBuilder::new()
+        .font(&CLOCK_FONT)
+        .text_color(BinaryColor::On)
+        .build();
+
+    Text::with_baseline(
+        &status,
+        Point::new(
+            MQTT_STATUS_LEFT + WIFI_LOGO_SIZE as i32 + 1,
+            MAIN_WINDOW_TOP as i32 + 1,
+        ),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?;
+
+    Ok(())
+}
+
 async fn draw_net(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<Point, UIError> {
     let text_style = MonoTextStyleBuilder::new()
         .font(&MAIN_FONT)
@@ -166,8 +204,13 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
 
     let mut waterstr: String<10> = String::new(); // 000%
     write!(waterstr, "~{:3}%", humidity_level().await)?;
+
     let mut waterlimstr: String<10> = String::new(); // 000%
     write!(waterlimstr, ">{:3}%", get_low_humidity_limit().await)?;
+
+    let mut nextwaterstr: String<10> = String::new(); // 000%
+    let time = get_next_watering_time().await;
+    write!(nextwaterstr, "{:02}:{:02}", time.hour(), time.minute())?;
 
     let text_style = MonoTextStyleBuilder::new()
         .font(&CLOCK_FONT)
@@ -182,6 +225,7 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     )
     .draw(&mut *target)
     .map_err(|_| UIError::DrawError)?;
+
     Text::with_baseline(
         &waterlimstr,
         Point::new(
@@ -193,6 +237,20 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     )
     .draw(&mut *target)
     .map_err(|_| UIError::DrawError)?;
+
+    Text::with_baseline(
+        &nextwaterstr,
+        Point::new(
+            MQTT_STATUS_LEFT,
+            MAIN_WINDOW_TOP as i32 + 1 + CLOCK_FONT.character_size.height as i32,
+        ),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut *target)
+    .map_err(|_| UIError::DrawError)?;
+
+    draw_mqtt(&mut *target).await?;
 
     Ok(())
 }

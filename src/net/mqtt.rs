@@ -9,7 +9,6 @@ use embassy_sync::mutex::Mutex;
 use embassy_time::Duration;
 use embassy_time::Timer;
 use esp_hal::rng::Rng;
-use esp_println::println;
 use heapless::String;
 use rust_mqtt::client::client::MqttClient;
 use rust_mqtt::client::client_config::ClientConfig;
@@ -17,11 +16,16 @@ use rust_mqtt::packet::v5::publish_packet::QualityOfService;
 
 use crate::command::Command;
 use crate::command::status::get_status;
-use crate::display::STATUS_LEN;
-use crate::display::update_status;
-use crate::error::{NetError, SysError};
+use crate::error::{ConversionError, NetError, SysError};
 
+const MQTT_STATUS_LEN: usize = 10;
 static LATENCY: Mutex<CriticalSectionRawMutex, Duration> = Mutex::new(Duration::from_secs(0));
+static STATUS: Mutex<CriticalSectionRawMutex, String<MQTT_STATUS_LEN>> =
+    Mutex::new(String::<MQTT_STATUS_LEN>::new());
+
+pub async fn mqtt_status() -> Result<String<MQTT_STATUS_LEN>, ConversionError> {
+    Ok(STATUS.lock().await.clone())
+}
 
 async fn measure_latency(stack: &Stack<'_>) -> Result<Duration, NetError> {
     let mut rx_buffer = [0; 256];
@@ -77,24 +81,24 @@ async fn update_mqtt(
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
-    let mut status: String<STATUS_LEN> = String::new();
-
     let mut socket = TcpSocket::new(*stack, &mut rx_buffer, &mut tx_buffer);
     socket.set_timeout(Some(MQTT_REFRESH_TIME));
 
     let address = match stack.dns_query(MQTT_SERVER, DnsQueryType::A).await {
         Ok(addr) => addr,
         Err(e) => {
-            write!(status, "MQTT DNS: {:?}", e).ok();
-            update_status(&status).await.ok();
+            let mut status = STATUS.lock().await;
+            status.clear();
+            write!(status, "{:?}", e).ok();
             return Err(SysError::Net(NetError::Resolve));
         }
     };
 
     let remote_endpoint: IpEndpoint = (address[0], MQTT_PORT).into();
     if let Err(e) = socket.connect(remote_endpoint).await {
-        write!(status, "MQTT Sock: {:?}", e).ok();
-        update_status(&status).await.ok();
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Socket));
     }
 
@@ -111,52 +115,64 @@ async fn update_mqtt(
     );
 
     if let Err(e) = client.connect_to_broker().await {
-        write!(status, "MQTT Conn: {:?}", e).ok();
-        update_status(&status).await.ok();
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Mqtt));
     }
 
     if let Err(e) = client.send_ping().await {
-        write!(status, "MQTT Ping: {:?}", e).ok();
-        update_status(&status).await.ok();
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Mqtt));
     }
 
     let msg: String<MQTT_BUFFER_SIZE> = serde_json_core::to_string(&get_status().await).unwrap();
-    println!("Status: {}", msg);
 
     if let Err(e) = client
         .send_message(MQTT_TOPIC, msg.as_bytes(), QualityOfService::QoS1, true)
         .await
     {
-        write!(status, "MQTT Pub: {:?}", e).ok();
-        update_status(&status).await.ok();
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Mqtt));
+    }
+
+    {
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "OK").ok();
     }
 
     if let Err(e) = client.subscribe_to_topic("water/control").await {
-        write!(status, "MQTT Sub: {:?}", e).ok();
-        update_status(&status).await.ok();
+        let mut status = STATUS.lock().await;
+        status.clear();
+        write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Mqtt));
     }
 
-    write!(status, "MQTT wait...").ok();
-    update_status(&status).await.ok();
     match client.receive_message().await {
         Ok((_topic, payload)) => {
             let command: Result<(Command, _), _> = serde_json_core::from_slice(payload);
             if let Ok((cmd, _)) = command {
+                let mut status = STATUS.lock().await;
+                status.clear();
+                write!(status, "Cmd").ok();
                 cmd.process().await;
             } else {
-                update_status("MQTT: cmd err")
-                    .await
-                    .map_err(|_| NetError::Mqtt)?;
+                let mut status = STATUS.lock().await;
+                status.clear();
+                write!(status, "ERecv").ok();
+                return Err(SysError::Net(NetError::Mqtt));
             }
             Ok(())
         }
         Err(e) => {
-            write!(status, "MQTT Recv: {:?}", e).ok();
-            update_status(&status).await.ok();
+            let mut status = STATUS.lock().await;
+            status.clear();
+            write!(status, "{:?}", e).ok();
             Err(SysError::Net(NetError::Mqtt))
         }
     }

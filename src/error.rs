@@ -23,6 +23,7 @@ pub enum ConversionError {
     Utf(#[from] Utf8Error),
     Format(#[from] core::fmt::Error),
     Json,
+    RawBuf,
 }
 
 #[derive(Debug, Error)]

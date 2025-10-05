@@ -3,7 +3,7 @@ use embassy_sync::mutex::Mutex;
 
 use jiff::{
     Timestamp,
-    civil::Time,
+    civil::{DateTime, Time},
     tz::{self, TimeZone},
 };
 
@@ -36,4 +36,20 @@ pub async fn set_last_watered(time: Timestamp) {
 
 pub async fn get_last_watered() -> Timestamp {
     *LAST_WATERED.lock().await
+}
+
+static NEXT_WATERING: Mutex<CriticalSectionRawMutex, Timestamp> =
+    Mutex::new(Timestamp::constant(0, 0));
+
+pub async fn set_next_watering(time: Timestamp) {
+    NEXT_WATERING.lock().await.clone_from(&time);
+}
+
+pub async fn get_next_watering() -> Timestamp {
+    *NEXT_WATERING.lock().await
+}
+
+pub async fn get_next_watering_time() -> Time {
+    let time = *NEXT_WATERING.lock().await;
+    time.to_zoned(TZ.clone()).time()
 }

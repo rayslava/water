@@ -16,7 +16,7 @@ pub async fn charge_level() -> u32 {
 /// Returns the level moisture in percent
 ///
 /// The computations are mostly random guesses but seem to show some value.
-pub async fn water_level() -> u32 {
+pub async fn humidity_level() -> u32 {
     let adc_val = get_sensor_value().await;
 
     // Approximate values:

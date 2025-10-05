@@ -1,5 +1,5 @@
 use crate::net::mqtt::latency;
-use crate::power::water_level;
+use crate::power::humidity_level;
 use crate::watering::get_low_humidity_limit;
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;
@@ -165,7 +165,7 @@ async fn draw_main(target: &mut impl DrawTarget<Color = BinaryColor>) -> Result<
     image.draw(&mut *target).map_err(|_| UIError::DrawError)?;
 
     let mut waterstr: String<10> = String::new(); // 000%
-    write!(waterstr, "~{:3}%", water_level().await)?;
+    write!(waterstr, "~{:3}%", humidity_level().await)?;
     let mut waterlimstr: String<10> = String::new(); // 000%
     write!(waterlimstr, ">{:3}%", get_low_humidity_limit().await)?;
 

@@ -73,7 +73,7 @@ smoltcp = { version = "0.12", default-features = false, features = [
 ] }
 sntpc = { version = "0.6", default-features = false,  features = ["embassy-socket"] }
 chrono = { version = "0.4.39", default-features = false, features = [ "alloc" ] }
-jiff = { version = "0.2", default-features = false, features = ["static"] }
+jiff = { version = "0.2", default-features = false, features = ["static", "serde"] }
 chrono-tz = { version = "0.5", default-features = false }
 static_cell = "2"
 ssd1306 = { version = "0.10", features = ["async", "graphics"] }

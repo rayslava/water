@@ -8,5 +8,5 @@ pub async fn get_low_humidity_limit() -> u16 {
 }
 
 pub async fn set_low_humidity_limit(lim: u16) {
-    *LOW_HUMIDITY_LIMIT.lock().await = lim;
+    LOW_HUMIDITY_LIMIT.lock().await.clone_from(&lim);
 }

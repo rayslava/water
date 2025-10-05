@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::display::STATUS_LEN;
 use crate::display::update_status;
 use crate::watering::set_low_humidity_limit;
+pub mod status;
 
 #[derive(Serialize, Deserialize)]
 pub enum Command {

@@ -37,8 +37,15 @@ async fn main(spawner: Spawner) -> ! {
     let rng = Rng::new();
     let wifi_timer = TimerGroup::new(peripherals.TIMG0).timer0;
 
-    // We need second timer for esp-rtos to work
-    let embassy_timer = TimerGroup::new(peripherals.TIMG1).timer0;
+    let timer_group1 = TimerGroup::new(peripherals.TIMG1);
+    let embassy_timer = timer_group1.timer0;
+    let watchdog = timer_group1.wdt;
+
+    match water::watchdog::init_watchdog(watchdog) {
+        Ok(()) => println!("Watchdog initialized successfully"),
+        Err(e) => println!("Failed to initialize watchdog: {:?}", e),
+    }
+
     esp_rtos::start(embassy_timer);
 
     // Initialize software interrupts for second core
@@ -111,5 +118,8 @@ async fn main(spawner: Spawner) -> ! {
             compressor.set_low();
         }
         Timer::after(Duration::from_millis(2000)).await;
+
+        // We're still alive
+        water::watchdog::feed_watchdog();
     }
 }

@@ -63,6 +63,7 @@ pub enum SysError {
     TimerSetup,
     NoTime,
     AppCoreStartFailed,
+    WatchdogError,
 }
 
 // Generate transitive From implementations

@@ -22,7 +22,7 @@ use water::io::wifi::wifi_hw_init;
 use water::net::mqtt::mqtt_task;
 use water::net::ntp::{NtpClient, ntp_task};
 use water::net::stack::{init_net, wait_for_ip, wait_for_link};
-use water::time::{now, set_last_watered};
+use water::watering::watering_task;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
@@ -52,7 +52,7 @@ async fn main(spawner: Spawner) -> ! {
     let software_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let led = led_init(peripherals.GPIO2).await;
-    let mut compressor = compressor_init(peripherals.GPIO25).await;
+    let compressor = compressor_init(peripherals.GPIO25).await;
     let button = btn_init(peripherals.GPIO0).await;
 
     rtc::init(peripherals.LPWR).await;
@@ -101,6 +101,9 @@ async fn main(spawner: Spawner) -> ! {
     wait_for_ip(stack).await;
     set_heartbeat(HEARTBEAT_DEFAULT);
 
+    // Automatic watering supervisor with button override
+    spawner.spawn(watering_task(compressor, Some(button))).ok();
+
     let ntp = NtpClient::new(stack);
     spawner.spawn(ntp_task(ntp)).ok();
     spawner.spawn(mqtt_task(rng, stack)).ok();
@@ -110,13 +113,6 @@ async fn main(spawner: Spawner) -> ! {
         let bat_val = get_battery_value().await;
         println!("Sensor: {}, Battery: {}", sens_val, bat_val);
 
-        if button.is_low() {
-            println!("Compressor ON");
-            set_last_watered(now().await.unwrap()).await;
-            compressor.set_high();
-        } else {
-            compressor.set_low();
-        }
         Timer::after(Duration::from_millis(2000)).await;
 
         // We're still alive

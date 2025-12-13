@@ -44,10 +44,11 @@ pub fn feed_watchdog() {
     if WATCHDOG_ENABLED.load(Ordering::SeqCst) {
         critical_section::with(|_| {
             if let Ok(mut wdt_guard) = GLOBAL_WDT.try_lock()
-                && let Some(wdt) = wdt_guard.as_mut() {
-                    wdt.feed();
-                    FEED_COUNT.fetch_add(1, Ordering::SeqCst);
-                }
+                && let Some(wdt) = wdt_guard.as_mut()
+            {
+                wdt.feed();
+                FEED_COUNT.fetch_add(1, Ordering::SeqCst);
+            }
         });
     }
 }
@@ -65,11 +66,12 @@ pub fn get_watchdog_stats() -> (bool, u32) {
 pub fn disable_watchdog() {
     critical_section::with(|_| {
         if let Ok(mut wdt_guard) = GLOBAL_WDT.try_lock()
-            && let Some(wdt) = wdt_guard.as_mut() {
-                wdt.disable();
-                WATCHDOG_ENABLED.store(false, Ordering::SeqCst);
-                println!("WARNING: Watchdog disabled");
-            }
+            && let Some(wdt) = wdt_guard.as_mut()
+        {
+            wdt.disable();
+            WATCHDOG_ENABLED.store(false, Ordering::SeqCst);
+            println!("WARNING: Watchdog disabled");
+        }
     });
 }
 
@@ -77,10 +79,11 @@ pub fn disable_watchdog() {
 pub fn enable_watchdog() {
     critical_section::with(|_| {
         if let Ok(mut wdt_guard) = GLOBAL_WDT.try_lock()
-            && let Some(wdt) = wdt_guard.as_mut() {
-                wdt.enable();
-                WATCHDOG_ENABLED.store(true, Ordering::SeqCst);
-                println!("Watchdog re-enabled");
-            }
+            && let Some(wdt) = wdt_guard.as_mut()
+        {
+            wdt.enable();
+            WATCHDOG_ENABLED.store(true, Ordering::SeqCst);
+            println!("Watchdog re-enabled");
+        }
     });
 }

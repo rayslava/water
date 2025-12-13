@@ -3,7 +3,7 @@ use embassy_sync::mutex::Mutex;
 
 use jiff::{
     Timestamp,
-    civil::{DateTime, Time},
+    civil::Time,
     tz::{self, TimeZone},
 };
 

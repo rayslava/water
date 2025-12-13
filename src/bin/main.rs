@@ -1,26 +1,18 @@
-//! Embassy DHCP Example
-//!
-//!
-//! Set SSID and PASSWORD env variable before running this example.
-//!
-//! This gets an ip address via DHCP then performs an HTTP get request to some
-//! "random" server
 #![no_std]
 #![no_main]
 
-use core::fmt::Write;
+// use core::fmt::Write;
 use embassy_executor::Spawner;
-use embassy_net::dns::DnsQueryType;
-use embassy_net::tcp::TcpSocket;
 use embassy_time::{Duration, Timer};
 use esp_alloc as _;
 use esp_backtrace as _;
-use esp_hal::{clock::CpuClock, rng::Rng, timer::timg::TimerGroup};
+use esp_hal::{
+    clock::CpuClock, interrupt::software::SoftwareInterruptControl, rng::Rng,
+    timer::timg::TimerGroup,
+};
 use esp_println::println;
-use heapless::String;
 use water::appcore::start_appcore;
-use water::command::Command;
-use water::display::{STATUS_LEN, display_task, update_status};
+use water::display::{display_task, update_status};
 use water::io::gpio::{
     adc_task, btn_init, compressor_init, get_battery_value, get_sensor_value, led_init,
 };
@@ -33,7 +25,7 @@ use water::net::stack::{init_net, wait_for_ip, wait_for_link};
 use water::time::{now, set_last_watered};
 esp_bootloader_esp_idf::esp_app_desc!();
 
-#[esp_hal_embassy::main]
+#[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
 
@@ -42,12 +34,15 @@ async fn main(spawner: Spawner) -> ! {
 
     esp_alloc::heap_allocator!(size: 72 * 1024);
 
-    let mut rng = Rng::new(peripherals.RNG);
+    let rng = Rng::new();
     let wifi_timer = TimerGroup::new(peripherals.TIMG0).timer0;
 
-    // We need second timer for Embassy to work
+    // We need second timer for esp-rtos to work
     let embassy_timer = TimerGroup::new(peripherals.TIMG1).timer0;
-    esp_hal_embassy::init(embassy_timer);
+    esp_rtos::start(embassy_timer);
+
+    // Initialize software interrupts for second core
+    let software_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
 
     let led = led_init(peripherals.GPIO2).await;
     let mut compressor = compressor_init(peripherals.GPIO25).await;
@@ -57,26 +52,31 @@ async fn main(spawner: Spawner) -> ! {
 
     update_status("App core starting").await.unwrap();
 
-    let _appcore_guard = start_appcore(peripherals.CPU_CTRL, {
-        let led_pin = led;
-        move |spawner| {
-            spawner.spawn(heartbeat(led_pin)).ok();
-            spawner
-                .spawn(display_task(
-                    peripherals.I2C0,
-                    peripherals.GPIO21,
-                    peripherals.GPIO22,
-                ))
-                .ok();
-            spawner
-                .spawn(adc_task(
-                    peripherals.GPIO36,
-                    peripherals.GPIO34,
-                    peripherals.ADC1,
-                ))
-                .ok();
-        }
-    })
+    start_appcore(
+        peripherals.CPU_CTRL,
+        software_interrupt.software_interrupt0,
+        software_interrupt.software_interrupt1,
+        {
+            let led_pin = led;
+            move |spawner| {
+                spawner.spawn(heartbeat(led_pin)).ok();
+                spawner
+                    .spawn(display_task(
+                        peripherals.I2C0,
+                        peripherals.GPIO21,
+                        peripherals.GPIO22,
+                    ))
+                    .ok();
+                spawner
+                    .spawn(adc_task(
+                        peripherals.GPIO36,
+                        peripherals.GPIO34,
+                        peripherals.ADC1,
+                    ))
+                    .ok();
+            }
+        },
+    )
     .unwrap();
 
     update_status("WiFi init").await.unwrap();

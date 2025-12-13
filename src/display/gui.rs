@@ -1,7 +1,7 @@
 use crate::error::ConversionError;
 use crate::net::mqtt::{latency, mqtt_status};
 use crate::power::humidity_level;
-use crate::time::{get_next_watering, get_next_watering_time};
+use crate::time::get_next_watering_time;
 use crate::watering::get_low_humidity_limit;
 use crate::{error::UIError, io::wifi::is_wifi_connected, power::charge_level, time::localtime};
 use core::fmt::Write;

@@ -2,7 +2,7 @@ use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
-use esp_wifi::wifi::WifiDevice;
+use esp_radio::wifi::WifiDevice;
 use heapless::String;
 use static_cell::StaticCell;
 

@@ -1,9 +1,10 @@
 use core::ptr::addr_of_mut;
 
 use embassy_executor::Spawner;
+use esp_hal::interrupt::software::SoftwareInterrupt;
 use esp_hal::peripherals::CPU_CTRL;
-use esp_hal::system::{AppCoreGuard, CpuControl, Stack};
-use esp_hal_embassy::Executor;
+use esp_hal::system::Stack;
+use esp_rtos::embassy::Executor;
 use static_cell::StaticCell;
 
 use crate::error::SysError;
@@ -12,21 +13,30 @@ static mut APP_CORE_STACK: Stack<8192> = Stack::new();
 
 pub fn start_appcore<F>(
     cpu_peripheral: CPU_CTRL<'static>,
+    int0: SoftwareInterrupt<'static, 0>,
+    int1: SoftwareInterrupt<'static, 1>,
     task_spawner: F,
-) -> Result<AppCoreGuard<'static>, SysError>
+) -> Result<(), SysError>
 where
     F: FnOnce(Spawner) + Send + 'static,
 {
-    let mut cpu_control = CpuControl::new(cpu_peripheral);
-
-    Ok(
-        cpu_control.start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
+    esp_rtos::start_second_core(
+        cpu_peripheral,
+        int0,
+        int1,
+        unsafe { &mut *addr_of_mut!(APP_CORE_STACK) },
+        move || {
+            // Create executor for the second core
             static EXECUTOR: StaticCell<Executor> = StaticCell::new();
             let executor = EXECUTOR.init(Executor::new());
 
-            executor.run(|spawner: Spawner| {
+            // Run the executor with the provided task spawner
+            executor.run(|spawner| {
                 task_spawner(spawner);
             });
-        })?,
-    )
+        },
+    );
+    // Note: start_second_core doesn't return a result in esp-rtos, it panics on failure
+
+    Ok(())
 }

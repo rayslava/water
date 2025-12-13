@@ -128,7 +128,7 @@ async fn update_mqtt(
         return Err(SysError::Net(NetError::Mqtt));
     }
 
-    let msg: String<MQTT_BUFFER_SIZE> = serde_json_core::to_string(&get_status().await).unwrap();
+    let msg = serde_json_core::to_string::<_, MQTT_BUFFER_SIZE>(&get_status().await).unwrap();
 
     if let Err(e) = client
         .send_message(MQTT_TOPIC, msg.as_bytes(), QualityOfService::QoS1, true)

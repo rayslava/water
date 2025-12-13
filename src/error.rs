@@ -2,8 +2,8 @@ use core::str::Utf8Error;
 use display_interface::DisplayError;
 use embassy_executor::SpawnError;
 use esp_hal::system::Error as SystemError;
-use esp_wifi::InitializationError;
-use esp_wifi::wifi::WifiError;
+use esp_radio::InitializationError;
+use esp_radio::wifi::WifiError;
 use thiserror_no_std::Error;
 
 #[derive(Debug, Error)]
@@ -62,6 +62,7 @@ pub enum SysError {
     Time(#[from] jiff::Error),
     TimerSetup,
     NoTime,
+    AppCoreStartFailed,
 }
 
 // Generate transitive From implementations

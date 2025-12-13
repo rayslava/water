@@ -2,16 +2,17 @@ use crate::display::{STATUS_LEN, update_status};
 use crate::error::SysError;
 use crate::io::led::{HEARTBEAT_DEFAULT, HEARTBEAT_NET_AWAIT, set_heartbeat};
 use core::fmt::Write;
+// use alloc::string::ToString;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use esp_hal::{peripherals::WIFI, rng::Rng, timer::timg::Timer as HalTimer};
 use esp_println::println;
-use esp_wifi::wifi::{ClientConfiguration, Configuration, WifiEvent, WifiState};
-use esp_wifi::{
-    EspWifiController, init,
-    wifi::{WifiController, WifiDevice, new},
+use esp_radio::wifi::{ClientConfig, ModeConfig, ScanConfig, WifiEvent, WifiStaState};
+use esp_radio::{
+    Controller, init,
+    wifi::{Config, WifiController, WifiDevice, new},
 };
 use heapless::String;
 use static_cell::StaticCell;
@@ -23,18 +24,21 @@ const RECONNECT_DELAY: Duration = Duration::from_millis(5000);
 static WIFI_CONNECTED: Mutex<CriticalSectionRawMutex, bool> = Mutex::new(false);
 
 pub async fn wifi_hw_init(
-    timer: HalTimer<'static>,
-    rng: Rng,
+    _timer: HalTimer<'static>,
+    _rng: Rng,
     wifi_peripheral: WIFI<'static>,
     spawner: &Spawner,
 ) -> Result<WifiDevice<'static>, SysError> {
     // Initialize ESP WiFi hardware
+    // Note: timer and rng parameters are preserved for API compatibility
+    // but esp-radio 0.17 handles timing and randomness internally
     let esp_wifi_ctrl = {
-        static ESP_WIFI_CTRL: StaticCell<EspWifiController> = StaticCell::new();
-        ESP_WIFI_CTRL.init(init(timer, rng)?)
+        static ESP_WIFI_CTRL: StaticCell<Controller> = StaticCell::new();
+        ESP_WIFI_CTRL.init(init()?)
     };
 
-    let (controller, interfaces) = new(esp_wifi_ctrl, wifi_peripheral)?;
+    let config = Config::default();
+    let (controller, interfaces) = new(esp_wifi_ctrl, wifi_peripheral, config)?;
 
     spawner.spawn(maintain_connection(controller))?;
 
@@ -49,7 +53,7 @@ pub async fn is_wifi_connected() -> bool {
 #[embassy_executor::task]
 async fn maintain_connection(mut controller: WifiController<'static>) {
     loop {
-        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
+        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             update_status("WiFi disconnected").await.ok();
@@ -59,18 +63,23 @@ async fn maintain_connection(mut controller: WifiController<'static>) {
         }
 
         if !matches!(controller.is_started(), Ok(true)) {
-            let client_config = Configuration::Client(ClientConfiguration {
-                ssid: SSID.into(),
-                password: PASSWORD.into(),
-                ..Default::default()
-            });
-            controller.set_configuration(&client_config).unwrap();
+            let client_config = ModeConfig::Client(
+                ClientConfig::default()
+                    .with_ssid(SSID.into())
+                    .with_password(PASSWORD.into()),
+            );
+            controller.set_config(&client_config).unwrap();
             update_status("Starting WiFi").await.ok();
             controller.start_async().await.unwrap();
             update_status("WiFi scan").await.ok();
-            let result = controller.scan_n_async(10).await.unwrap();
-            for ap in result {
-                println!("{:?}", ap);
+            let scan_config = ScanConfig::default();
+            let result = controller
+                .scan_with_config_async(scan_config)
+                .await
+                .unwrap();
+            for ap in result.iter().take(5) {
+                // Limit to first 5 APs to avoid too much output
+                println!("Found AP: {:?}", ap.ssid);
             }
         }
 

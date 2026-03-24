@@ -106,7 +106,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let ntp = NtpClient::new(stack);
     spawner.spawn(ntp_task(ntp)).ok();
-    spawner.spawn(mqtt_task(rng, stack)).ok();
+    spawner.spawn(mqtt_task(stack)).ok();
 
     loop {
         let sens_val = get_sensor_value().await;

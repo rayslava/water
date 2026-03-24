@@ -8,11 +8,16 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Duration;
 use embassy_time::Timer;
-use esp_hal::rng::Rng;
 use heapless::String;
-use rust_mqtt::client::client::MqttClient;
-use rust_mqtt::client::client_config::ClientConfig;
-use rust_mqtt::packet::v5::publish_packet::QualityOfService;
+use rust_mqtt::Bytes;
+use rust_mqtt::buffer::AllocBuffer;
+use rust_mqtt::client::Client;
+use rust_mqtt::client::event::Event;
+use rust_mqtt::client::options::{
+    ConnectOptions, PublicationOptions, RetainHandling, SubscriptionOptions,
+};
+use rust_mqtt::config::{KeepAlive, SessionExpiryInterval};
+use rust_mqtt::types::{MqttBinary, MqttString, QoS, TopicFilter, TopicName};
 
 use crate::command::Command;
 use crate::command::status::get_status;
@@ -72,12 +77,10 @@ const MQTT_PASSWORD: &str = env!("MQTT_PASSWORD");
 const MQTT_PORT: u16 = 1883;
 const MQTT_CLIENT_ID: &str = "water_machine";
 const MQTT_TOPIC: &str = "water/status";
+const MQTT_CONTROL_TOPIC: &str = "water/control";
 const MQTT_BUFFER_SIZE: usize = 1024;
 
-async fn update_mqtt(
-    config: ClientConfig<'_, 10, Rng>,
-    stack: &'static Stack<'static>,
-) -> Result<(), SysError> {
+async fn update_mqtt(stack: &'static Stack<'static>) -> Result<(), SysError> {
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
 
@@ -102,42 +105,70 @@ async fn update_mqtt(
         return Err(SysError::Net(NetError::Socket));
     }
 
-    let mut recv_buffer = [0; MQTT_BUFFER_SIZE];
-    let mut write_buffer = [0; MQTT_BUFFER_SIZE];
+    let mut alloc = AllocBuffer;
+    let mut client: Client<'_, _, AllocBuffer, 1, 1, 1> = Client::new(&mut alloc);
 
-    let mut client = MqttClient::new(
-        socket,
-        &mut write_buffer,
-        MQTT_BUFFER_SIZE,
-        &mut recv_buffer,
-        MQTT_BUFFER_SIZE,
-        config,
-    );
+    // Safety: string literals are valid UTF-8 and within MQTT length limits
+    let client_id = unsafe { MqttString::from_slice_unchecked(MQTT_CLIENT_ID) };
+    let username = unsafe { MqttString::from_slice_unchecked(MQTT_USER) };
+    let password =
+        unsafe { MqttBinary::from_slice_unchecked(MQTT_PASSWORD.as_bytes()) };
 
-    if let Err(e) = client.connect_to_broker().await {
+    let connect_options = ConnectOptions {
+        clean_start: true,
+        keep_alive: KeepAlive::Seconds(60),
+        session_expiry_interval: SessionExpiryInterval::EndOnDisconnect,
+        user_name: Some(username),
+        password: Some(password),
+        will: None,
+    };
+
+    if let Err(e) = client.connect(socket, &connect_options, Some(client_id)).await {
         let mut status = STATUS.lock().await;
         status.clear();
         write!(status, "{:?}", e).ok();
         return Err(SysError::Net(NetError::Mqtt));
     }
 
-    if let Err(e) = client.send_ping().await {
-        let mut status = STATUS.lock().await;
-        status.clear();
-        write!(status, "{:?}", e).ok();
-        return Err(SysError::Net(NetError::Mqtt));
-    }
+    // Publish status message with QoS 1
+    let msg =
+        serde_json_core::to_string::<_, MQTT_BUFFER_SIZE>(&get_status().await).unwrap();
 
-    let msg = serde_json_core::to_string::<_, MQTT_BUFFER_SIZE>(&get_status().await).unwrap();
+    // Safety: MQTT_TOPIC is a valid topic name
+    let topic =
+        unsafe { TopicName::new_unchecked(MqttString::from_slice_unchecked(MQTT_TOPIC)) };
+    let pub_options = PublicationOptions {
+        retain: true,
+        topic,
+        qos: QoS::AtLeastOnce,
+    };
 
-    if let Err(e) = client
-        .send_message(MQTT_TOPIC, msg.as_bytes(), QualityOfService::QoS1, true)
+    let pub_pid = match client
+        .publish(&pub_options, Bytes::from(msg.as_bytes()))
         .await
     {
-        let mut status = STATUS.lock().await;
-        status.clear();
-        write!(status, "{:?}", e).ok();
-        return Err(SysError::Net(NetError::Mqtt));
+        Ok(pid) => pid,
+        Err(e) => {
+            let mut status = STATUS.lock().await;
+            status.clear();
+            write!(status, "{:?}", e).ok();
+            return Err(SysError::Net(NetError::Mqtt));
+        }
+    };
+
+    // Wait for QoS 1 publish acknowledgement
+    loop {
+        match client.poll().await {
+            Ok(Event::PublishAcknowledged(ack)) if ack.packet_identifier == pub_pid => break,
+            Ok(Event::PublishRejected(_)) => return Err(SysError::Net(NetError::Mqtt)),
+            Ok(_) => {}
+            Err(e) => {
+                let mut status = STATUS.lock().await;
+                status.clear();
+                write!(status, "{:?}", e).ok();
+                return Err(SysError::Net(NetError::Mqtt));
+            }
+        }
     }
 
     {
@@ -146,53 +177,81 @@ async fn update_mqtt(
         write!(status, "OK").ok();
     }
 
-    if let Err(e) = client.subscribe_to_topic("water/control").await {
-        let mut status = STATUS.lock().await;
-        status.clear();
-        write!(status, "{:?}", e).ok();
-        return Err(SysError::Net(NetError::Mqtt));
-    }
+    // Subscribe to control topic
+    // Safety: MQTT_CONTROL_TOPIC is a valid topic filter
+    let filter = unsafe {
+        TopicFilter::new_unchecked(MqttString::from_slice_unchecked(MQTT_CONTROL_TOPIC))
+    };
+    let sub_options = SubscriptionOptions {
+        retain_handling: RetainHandling::AlwaysSend,
+        retain_as_published: false,
+        no_local: false,
+        qos: QoS::AtLeastOnce,
+    };
 
-    match client.receive_message().await {
-        Ok((_topic, payload)) => {
-            let command: Result<(Command, _), _> = serde_json_core::from_slice(payload);
-            if let Ok((cmd, _)) = command {
-                let mut status = STATUS.lock().await;
-                status.clear();
-                write!(status, "Cmd").ok();
-                cmd.process().await;
-            } else {
-                let mut status = STATUS.lock().await;
-                status.clear();
-                write!(status, "ERecv").ok();
-                return Err(SysError::Net(NetError::Mqtt));
-            }
-            Ok(())
-        }
+    let sub_pid = match client.subscribe(filter, sub_options).await {
+        Ok(pid) => pid,
         Err(e) => {
             let mut status = STATUS.lock().await;
             status.clear();
             write!(status, "{:?}", e).ok();
-            Err(SysError::Net(NetError::Mqtt))
+            return Err(SysError::Net(NetError::Mqtt));
+        }
+    };
+
+    // Wait for subscription acknowledgement
+    loop {
+        match client.poll().await {
+            Ok(Event::Suback(ack)) if ack.packet_identifier == sub_pid => break,
+            Ok(_) => {}
+            Err(e) => {
+                let mut status = STATUS.lock().await;
+                status.clear();
+                write!(status, "{:?}", e).ok();
+                return Err(SysError::Net(NetError::Mqtt));
+            }
+        }
+    }
+
+    // Wait for an incoming command
+    loop {
+        match client.poll().await {
+            Ok(Event::Publish(publication)) => {
+                let command: Result<(Command, _), _> =
+                    serde_json_core::from_slice(&publication.message);
+                if let Ok((cmd, _)) = command {
+                    let mut status = STATUS.lock().await;
+                    status.clear();
+                    write!(status, "Cmd").ok();
+                    drop(status);
+                    cmd.process().await;
+                } else {
+                    let mut status = STATUS.lock().await;
+                    status.clear();
+                    write!(status, "ERecv").ok();
+                    return Err(SysError::Net(NetError::Mqtt));
+                }
+                return Ok(());
+            }
+            Ok(_) => {}
+            Err(e) => {
+                let mut status = STATUS.lock().await;
+                status.clear();
+                write!(status, "{:?}", e).ok();
+                return Err(SysError::Net(NetError::Mqtt));
+            }
         }
     }
 }
 
 #[embassy_executor::task]
-pub async fn mqtt_task(rng: Rng, stack: &'static Stack<'static>) {
-    let mut config = ClientConfig::new(rust_mqtt::client::client_config::MqttVersion::MQTTv5, rng);
-    config.add_max_subscribe_qos(QualityOfService::QoS1);
-    config.add_client_id(MQTT_CLIENT_ID);
-    config.max_packet_size = 128;
-    config.add_username(MQTT_USER);
-    config.add_password(MQTT_PASSWORD);
-
+pub async fn mqtt_task(stack: &'static Stack<'static>) {
     loop {
         *LATENCY.lock().await = measure_latency(stack)
             .await
             .unwrap_or(Duration::from_secs(0));
 
-        if update_mqtt(config.clone(), stack).await.is_err() {
+        if update_mqtt(stack).await.is_err() {
             Timer::after(MQTT_ERR_REFRESH_TIME).await;
         };
     }

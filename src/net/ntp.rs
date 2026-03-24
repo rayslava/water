@@ -1,9 +1,10 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use core::net::{IpAddr, SocketAddr};
 use embassy_net::{Stack, udp::UdpSocket};
+use embassy_net::{IpEndpoint, IpAddress};
 use embassy_time::{Duration, Instant, Timer};
 use smoltcp::{storage::PacketMetadata, wire::DnsQueryType};
-use sntpc::{NtpContext, NtpTimestampGenerator, get_time};
+use sntpc::{NtpContext, NtpTimestampGenerator, NtpUdpSocket, get_time};
 
 use crate::{
     display::update_status,
@@ -49,6 +50,49 @@ impl NtpTimestampGenerator for Timestamp {
     }
 }
 
+/// Wrapper around embassy-net 0.9 UdpSocket that implements sntpc's NtpUdpSocket trait.
+struct UdpSocketWrapper<'a> {
+    socket: UdpSocket<'a>,
+}
+
+impl<'a> UdpSocketWrapper<'a> {
+    fn new(socket: UdpSocket<'a>) -> Self {
+        Self { socket }
+    }
+}
+
+fn to_endpoint(addr: SocketAddr) -> IpEndpoint {
+    IpEndpoint::new(
+        match addr.ip() {
+            IpAddr::V4(addr) => IpAddress::Ipv4(addr),
+            IpAddr::V6(_) => unreachable!(),
+        },
+        addr.port(),
+    )
+}
+
+fn from_endpoint(ep: IpEndpoint) -> SocketAddr {
+    let IpAddress::Ipv4(val) = ep.addr;
+    SocketAddr::new(IpAddr::V4(val), ep.port)
+}
+
+impl NtpUdpSocket for UdpSocketWrapper<'_> {
+    async fn send_to(&self, buf: &[u8], addr: SocketAddr) -> sntpc::Result<usize> {
+        let endpoint = to_endpoint(addr);
+        match self.socket.send_to(buf, endpoint).await {
+            Ok(()) => Ok(buf.len()),
+            Err(_) => Err(sntpc::Error::Network),
+        }
+    }
+
+    async fn recv_from(&self, buf: &mut [u8]) -> sntpc::Result<(usize, SocketAddr)> {
+        match self.socket.recv_from(buf).await {
+            Ok((len, meta)) => Ok((len, from_endpoint(meta.endpoint))),
+            Err(_) => Err(sntpc::Error::Network),
+        }
+    }
+}
+
 pub struct NtpClient<'a> {
     stack: &'a Stack<'a>,
     context: NtpContext<Timestamp>,
@@ -70,15 +114,15 @@ impl<'a> NtpClient<'a> {
         let mut udp_tx_meta = [PacketMetadata::EMPTY; 16];
         let mut udp_tx_buffer = [0; 1024];
 
-        let mut socket = UdpSocket::new(
+        let socket = UdpSocket::new(
             *stack,
             &mut udp_rx_meta,
             &mut udp_rx_buffer,
             &mut udp_tx_meta,
             &mut udp_tx_buffer,
         );
-
-        socket.bind(123).unwrap();
+        let mut socket = UdpSocketWrapper::new(socket);
+        socket.socket.bind(123).unwrap();
 
         let ntp_addrs = stack.dns_query(NTP_SERVER, DnsQueryType::A).await?;
         if ntp_addrs.is_empty() {

@@ -25,7 +25,7 @@ critical-section = "1.2"
 embassy-executor = { version = "0.9", features = [
   "log",
 ] }
-embassy-net = { version = "0.7", features = [
+embassy-net = { version = "0.9", features = [
   "dhcpv4",
   "log",
   "tcp",
@@ -34,10 +34,10 @@ embassy-net = { version = "0.7", features = [
   "icmp",
 ] }
 embassy-time = { version = "0.5", features = ["log"] }
-embassy-sync = "0.7"
+embassy-sync = "0.8"
 embedded-io = "0.7"
 embedded-io-async = "0.7"
-rust-mqtt = { version = "0.3", default-features = false }
+rust-mqtt = { version = "0.4", default-features = false, features = ["v5", "alloc"] }
 
 esp-alloc = "0.9"
 heapless = { version = "0.9", features = ["serde"] }
@@ -53,7 +53,7 @@ esp-radio = { version = "0.17", features = [
   "log-04",
   "wifi",
 ] }
-smoltcp = { version = "0.12", default-features = false, features = [
+smoltcp = { version = "0.13", default-features = false, features = [
   "log",
   "medium-ethernet",
   "multicast",
@@ -66,8 +66,8 @@ smoltcp = { version = "0.12", default-features = false, features = [
   "socket-tcp",
   "socket-udp",
 ] }
-sntpc = { version = "0.7", default-features = false,  features = ["embassy-socket"] }
-chrono = { version = "0.4.42", default-features = false, features = [ "alloc" ] }
+sntpc = { version = "0.8", default-features = false }
+chrono = { version = "0.4", default-features = false, features = [ "alloc" ] }
 jiff = { version = "0.2", default-features = false, features = ["static", "serde"] }
 chrono-tz = { version = "0.10", default-features = false }
 static_cell = "2"
